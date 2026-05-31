@@ -21,6 +21,26 @@ function readingTone(reading) {
   return 'bg-gray-100 text-gray-600'
 }
 
+function Understanding({ description }) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <div className="mt-2 text-sm text-gray-600">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="text-xs text-blue-600 underline"
+      >
+        {isOpen ? 'Hide Understanding' : 'Show Understanding'}
+      </button>
+      {isOpen && (
+        <div
+          className="mt-1 rounded bg-gray-50 p-2 text-xs text-gray-700"
+          dangerouslySetInnerHTML={{ __html: description }}
+        />
+      )}
+    </div>
+  )
+}
+
 export default function Ohlcv() {
   const [form, setForm] = useState({
     symbol: 'AAPL',
@@ -238,35 +258,39 @@ export default function Ohlcv() {
           )}
           {shownIndicators.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
-              {shownIndicators.map((ind, i) => (
-                <div
-                  key={ind.key}
-                  className="rounded-lg border border-gray-200 bg-white p-3"
-                >
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="text-sm font-semibold">{ind.label}</h3>
-                      <p className="text-xs text-gray-500">
-                        latest: {formatNumber(ind.latest)}
-                        {ind.extra?.annualized != null &&
-                          ` · annualized: ${formatNumber(ind.extra.annualized)}`}
-                        {ind.extra?.mfi != null &&
-                          ` · MFI: ${formatNumber(ind.extra.mfi)}`}
-                      </p>
+              {shownIndicators.map((ind, i) => {
+                const meta = catalog.find((c) => c.key === ind.key)
+                return (
+                  <div
+                    key={ind.key}
+                    className="rounded-lg border border-gray-200 bg-white p-3"
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-semibold">{ind.label}</h3>
+                        <p className="text-xs text-gray-500">
+                          latest: {formatNumber(ind.latest)}
+                          {ind.extra?.annualized != null &&
+                            ` · annualized: ${formatNumber(ind.extra.annualized)}`}
+                          {ind.extra?.mfi != null &&
+                            ` · MFI: ${formatNumber(ind.extra.mfi)}`}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${readingTone(ind.reading)}`}
+                      >
+                        {ind.reading}
+                      </span>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${readingTone(ind.reading)}`}
-                    >
-                      {ind.reading}
-                    </span>
+                    <IndicatorChart
+                      points={ind.series[ind.key] ?? []}
+                      color={LINE_COLORS[i % LINE_COLORS.length]}
+                      height={140}
+                    />
+                    {meta && <Understanding description={meta.description} />}
                   </div>
-                  <IndicatorChart
-                    points={ind.series[ind.key] ?? []}
-                    color={LINE_COLORS[i % LINE_COLORS.length]}
-                    height={140}
-                  />
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
 

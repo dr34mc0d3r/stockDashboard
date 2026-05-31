@@ -80,7 +80,7 @@ def _last_non_none(series: Series) -> float | None:
 @register(
     "parkinson_volatility",
     "Parkinson Volatility",
-    "Rolling high-low range volatility — a panic / range-expansion gauge.",
+    "<p><strong>Parkinson Volatility</strong> measures volatility using only high and low prices. It is more sensitive to intraday range expansion than standard deviation, making it useful for detecting 'panic' or explosive moves.</p><p><strong>Equation:</strong> <code>σ = √[ (1 / (4N ln(2))) * Σ (ln(H/L))² ]</code></p>",
 )
 def parkinson_volatility(bars: list[Bar], period: int, timeframe: str) -> Computation:
     """sigma = sqrt( (1 / (4 * ln2 * N)) * sum( ln(H/L)^2 ) )."""
@@ -127,7 +127,7 @@ def parkinson_volatility(bars: list[Bar], period: int, timeframe: str) -> Comput
 @register(
     "acceleration",
     "Acceleration",
-    "Rate of change of N-period momentum — sustainable vs exhausting.",
+    "<p><strong>Acceleration</strong> measures the rate of change of momentum. A positive value indicates that a trend is strengthening, while a negative value indicates that momentum is fading or exhausting.</p><p><strong>Equation:</strong> <code>Acc = (Close_t - Close_{t-N}) - (Close_{t-1} - Close_{t-N-1})</code></p>",
 )
 def acceleration(bars: list[Bar], period: int, *_) -> Computation:
     """velocity_t = close_t - close_(t-N);  acceleration_t = velocity_t - velocity_(t-1)."""
@@ -167,7 +167,7 @@ def acceleration(bars: list[Bar], period: int, *_) -> Computation:
 @register(
     "money_flow_ratio",
     "Money Flow Ratio",
-    "Positive vs negative money flow over N bars — buying vs selling pressure.",
+    "<p><strong>Money Flow Ratio</strong> evaluates buying vs. selling pressure by comparing the sum of positive money flows (typical price * volume on up days) to negative money flows (typical price * volume on down days) over a window.</p><p><strong>Equation:</strong> <code>Ratio = Σ(PositiveFlow) / Σ(NegativeFlow)</code></p>",
 )
 def money_flow_ratio(bars: list[Bar], period: int, *_) -> Computation:
     """ratio = sum(positive flow) / sum(negative flow); flow = typical price * volume."""
@@ -220,7 +220,7 @@ def money_flow_ratio(bars: list[Bar], period: int, *_) -> Computation:
 @register(
     "vwap_zscore",
     "VWAP Z-Score",
-    "Std-devs of close from rolling VWAP — an overextension gauge.",
+    "<p><strong>VWAP Z-Score</strong> measures how many standard deviations the current closing price is away from the Volume Weighted Average Price (VWAP). It is a statistical gauge of price overextension.</p><p><strong>Equation:</strong> <code>Z = (Close - VWAP) / StdDev(Close - VWAP)</code></p>",
 )
 def vwap_zscore(bars: list[Bar], period: int, *_) -> Computation:
     """z = (close - VWAP) / stddev(close - VWAP) over N bars."""
