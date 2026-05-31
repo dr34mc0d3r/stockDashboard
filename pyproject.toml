@@ -1,0 +1,35 @@
+[project]
+name = "stockDashboard"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14.3"
+dependencies = [
+    "alpaca-py>=0.43.4",
+    "fastapi>=0.136.3",
+    "finnhub-python>=2.4.28",
+    "pandas>=3.0.3",
+    "python-dotenv>=1.2.2",
+    "uvicorn[standard]>=0.48.0",
+    "websocket-client>=1.9.0",
+    "yfinance>=1.4.1",
+]
+
+[tool.pyright]
+# Reference/example snippets under docs/ are not part of the codebase.
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    ".venv",
+    "docs",
+]
+
+[tool.pytest.ini_options]
+# Source lives under src/; make the backend package importable from tests.
+pythonpath = ["src"]
+testpaths = ["src/backend/tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]

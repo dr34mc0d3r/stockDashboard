@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python -c \"from alpaca.data.models import BarSet; print\\('ok', BarSet\\)\")",
+      "Bash(python -c \"from alpaca.data.timeframe import TimeFrame, TimeFrameUnit; print\\('ok', TimeFrameUnit.Minute\\)\")",
+      "Bash(uv add *)",
+      "Bash(npm --version)",
+      "Bash(npm create *)",
+      "Bash(npm install *)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\({...p.dependencies,...p.devDependencies},null,2\\)\\)\")",
+      "Bash(npm run *)",
+      "Bash(node -e \"console.log\\('version:', require\\('./node_modules/lightweight-charts/package.json'\\).version\\)\")"
+    ]
+  }
+}
