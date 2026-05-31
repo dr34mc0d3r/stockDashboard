@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import CandlestickChart from '../components/CandlestickChart.jsx'
 import IndicatorChart from '../components/IndicatorChart.jsx'
+import { ChartSyncProvider } from '../lib/chartSync.js'
 
 const TIMEFRAMES = ['1m', '5m', '1h', '1d']
 
@@ -243,6 +244,7 @@ export default function Ohlcv() {
       )}
 
       {data && (
+        <ChartSyncProvider>
         <div className="space-y-3">
           {data.bars.length > 0 && (
             <div className="rounded-lg border border-gray-200 bg-white p-2">
@@ -339,6 +341,7 @@ export default function Ohlcv() {
             </div>
           )}
         </div>
+        </ChartSyncProvider>
       )}
     </div>
   )

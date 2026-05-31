@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import CandlestickChart from '../components/CandlestickChart.jsx'
 import IndicatorChart from '../components/IndicatorChart.jsx'
 import { computeIndicators } from '../lib/indicators.js'
+import { ChartSyncProvider } from '../lib/chartSync.js'
 
 // Build the ws:// (or wss://) URL for the backend stream proxy, reusing the
 // current page's host so Vite's dev proxy forwards it to FastAPI.
@@ -299,6 +300,7 @@ function SymbolPanel({ symbol, bars, period, catalog, selected }) {
   const shownIndicators = Object.values(indicators)
 
   return (
+    <ChartSyncProvider>
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{symbol}</h2>
@@ -347,6 +349,7 @@ function SymbolPanel({ symbol, bars, period, catalog, selected }) {
         </div>
       )}
     </div>
+    </ChartSyncProvider>
   )
 }
 

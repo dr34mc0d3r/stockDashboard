@@ -12,7 +12,10 @@
       "Bash(npm install *)",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\({...p.dependencies,...p.devDependencies},null,2\\)\\)\")",
       "Bash(npm run *)",
-      "Bash(node -e \"console.log\\('version:', require\\('./node_modules/lightweight-charts/package.json'\\).version\\)\")"
+      "Bash(node -e \"console.log\\('version:', require\\('./node_modules/lightweight-charts/package.json'\\).version\\)\")",
+      "Bash(npx eslint *)",
+      "Bash(echo \"lint exit: $?\")",
+      "Bash(TMPDIR=/tmp npx vite build)"
     ]
   }
 }

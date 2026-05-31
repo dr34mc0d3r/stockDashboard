@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { CandlestickSeries, ColorType, createChart } from 'lightweight-charts'
+import { useChartSync } from '../lib/chartSync.js'
 
 // Convert API bars ({ timestamp, open, high, low, close }) into the
 // { time, open, high, low, close } shape lightweight-charts expects.
@@ -34,6 +35,7 @@ export default function CandlestickChart({ bars = [], height = 400 }) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const seriesRef = useRef(null)
+  const sync = useChartSync()
 
   // Create the chart once on mount.
   useEffect(() => {
@@ -72,13 +74,15 @@ export default function CandlestickChart({ bars = [], height = 400 }) {
 
     chartRef.current = chart
     seriesRef.current = series
+    const unregister = sync?.register(chart)
 
     return () => {
+      unregister?.()
       chart.remove()
       chartRef.current = null
       seriesRef.current = null
     }
-  }, [])
+  }, [sync])
 
   // Push new data whenever bars change, then fit the view to it.
   useEffect(() => {
