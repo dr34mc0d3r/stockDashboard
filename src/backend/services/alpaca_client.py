@@ -1,9 +1,17 @@
 import json
+import ssl
 import urllib.error
 import urllib.parse
 import urllib.request
 
+import certifi
+
 from config import ALPACA_API_KEY, ALPACA_SECRET_KEY
+
+# Verify TLS against certifi's CA bundle. The interpreter on the headless
+# Ubuntu host has no system trust store wired into Python's default OpenSSL
+# context, which surfaces as CERTIFICATE_VERIFY_FAILED when reaching Alpaca.
+SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 # Map friendly timeframe strings to Alpaca's raw query values.
 TIMEFRAME_MAP = {
@@ -51,7 +59,7 @@ def fetch_historical_ohlcv(
     req = urllib.request.Request(full_url, headers=headers, method="GET")
 
     try:
-        with urllib.request.urlopen(req) as response:
+        with urllib.request.urlopen(req, context=SSL_CONTEXT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8") if e.fp else str(e)

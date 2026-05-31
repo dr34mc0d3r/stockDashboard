@@ -665,6 +665,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "alpaca-py" },
+    { name = "certifi" },
     { name = "fastapi" },
     { name = "finnhub-python" },
     { name = "pandas" },
@@ -682,6 +683,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alpaca-py", specifier = ">=0.43.4" },
+    { name = "certifi", specifier = ">=2024.2.2" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "finnhub-python", specifier = ">=2.4.28" },
     { name = "pandas", specifier = ">=3.0.3" },

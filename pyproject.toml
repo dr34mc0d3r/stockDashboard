@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14.3"
 dependencies = [
     "alpaca-py>=0.43.4",
+    "certifi>=2024.2.2",
     "fastapi>=0.136.3",
     "finnhub-python>=2.4.28",
     "pandas>=3.0.3",
