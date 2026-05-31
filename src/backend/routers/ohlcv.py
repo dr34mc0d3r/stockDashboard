@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from ..models import OHLCVResponse
-from ..services.alpaca_client import (
+from models import OHLCVResponse
+from services.alpaca_client import (
     TIMEFRAME_MAP,
     AlpacaError,
     fetch_historical_ohlcv,

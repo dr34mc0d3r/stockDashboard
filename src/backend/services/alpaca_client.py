@@ -3,7 +3,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from ..config import ALPACA_API_KEY, ALPACA_SECRET_KEY
+from config import ALPACA_API_KEY, ALPACA_SECRET_KEY
 
 # Map friendly timeframe strings to Alpaca's raw query values.
 TIMEFRAME_MAP = {

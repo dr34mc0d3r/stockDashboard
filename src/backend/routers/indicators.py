@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from ..models import IndicatorCatalog, IndicatorsResponse
-from ..services import indicators as ind
-from ..services.alpaca_client import (
+from models import IndicatorCatalog, IndicatorsResponse
+from services import indicators as ind
+from services.alpaca_client import (
     TIMEFRAME_MAP,
     AlpacaError,
     fetch_historical_ohlcv,

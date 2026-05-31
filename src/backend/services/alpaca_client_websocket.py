@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 
 import websocket  # provided by the "websocket-client" package
 
-from ..config import ALPACA_API_KEY, ALPACA_SECRET_KEY
+from config import ALPACA_API_KEY, ALPACA_SECRET_KEY
 
 # Alpaca's live market-data stream. The "iex" feed is compatible with
 # free-tier credentials (matching feed=iex used by the historical REST client).

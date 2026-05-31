@@ -96,20 +96,13 @@ export default function OhlcvWebsocket() {
         </span>
       </div>
 
-      <p className="text-sm text-gray-600">
-        Streams live market data from Alpaca
-        (<code className="font-mono text-xs">
-          wss://stream.data.alpaca.markets/v2/iex
-        </code>)
-        proxied through the backend.
-      </p>
-
       <div className="flex flex-wrap items-end gap-4 rounded-lg border border-gray-200 bg-white p-4">
-        <Field label="Symbols (comma-separated)">
+        <Field label="Symbols">
           <input
             value={symbols}
             onChange={(e) => setSymbols(e.target.value)}
             disabled={connected}
+            placeholder="AAPL,MSFT"
             className="w-48 rounded-md border border-gray-300 px-2 py-1 uppercase disabled:bg-gray-50"
           />
         </Field>
@@ -128,7 +121,7 @@ export default function OhlcvWebsocket() {
           disabled={connected}
           className="rounded-md bg-gray-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
         >
-          Connect
+          {status === 'connecting' ? 'Connecting...' : 'Connect'}
         </button>
         <button
           type="button"
@@ -148,12 +141,11 @@ export default function OhlcvWebsocket() {
 
       <div className="space-y-2">
         <p className="text-sm text-gray-600">
-          {messages.length} frame{messages.length === 1 ? '' : 's'}
+          {messages.length} frame{messages.length === 1 ? '' : 's'} received
         </p>
         {messages.length === 0 ? (
           <p className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-400">
-            No data yet. Connect to start streaming. (Bars/trades only arrive
-            during market hours.)
+            No data yet. Connect to start streaming.
           </p>
         ) : (
           <ul className="space-y-2">

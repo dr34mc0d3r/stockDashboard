@@ -1,6 +1,6 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ..services.alpaca_client_websocket import (
+from services.alpaca_client_websocket import (
     DEFAULT_CHANNELS,
     DEFAULT_SYMBOLS,
     AlpacaWebSocketError,

@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import CORS_ORIGINS
-from .routers import alpaca_stream, indicators, ohlcv
+from config import CORS_ORIGINS
+from routers import alpaca_stream, indicators, ohlcv
 
 app = FastAPI(title="Stock OHLCV API", version="0.1.0")
 
