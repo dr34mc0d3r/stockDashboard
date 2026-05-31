@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import CandlestickChart from '../components/CandlestickChart.jsx'
+import IndicatorChart from '../components/IndicatorChart.jsx'
+import { computeIndicators } from '../lib/indicators.js'
 
 // Build the ws:// (or wss://) URL for the backend stream proxy, reusing the
 // current page's host so Vite's dev proxy forwards it to FastAPI.
@@ -8,6 +11,12 @@ function streamUrl(symbols, channels) {
   return `${protocol}//${window.location.host}/api/stream?${params}`
 }
 
+// Live "bars" frames are 1-minute bars, so indicators annualize against 1m.
+const LIVE_TIMEFRAME = '1m'
+
+// Keep memory bounded — only the most recent bars are charted.
+const MAX_BARS = 500
+
 const STATUS_TONE = {
   connecting: 'bg-amber-50 text-amber-700',
   open: 'bg-green-50 text-green-700',
@@ -15,24 +24,95 @@ const STATUS_TONE = {
   error: 'bg-red-50 text-red-700',
 }
 
-// Alpaca tags each frame with a "T" type: t=trade, q=quote, b=bar,
-// plus control frames (success/subscription/error).
-const FRAME_LABEL = {
-  t: 'trade',
-  q: 'quote',
-  b: 'bar',
-  subscription: 'subscription',
-  success: 'success',
-  error: 'error',
+// Distinct colors for indicator line charts, assigned by order.
+const LINE_COLORS = ['#2563eb', '#16a34a', '#d97706', '#9333ea', '#dc2626', '#0891b2']
+
+function formatNumber(value) {
+  if (value == null) return '—'
+  return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })
+}
+
+function readingTone(reading) {
+  const r = reading.toLowerCase()
+  if (/(panic|exhausting|selling|overextended)/.test(r))
+    return 'bg-red-50 text-red-700'
+  if (/(buying|sustainable|building|calm)/.test(r))
+    return 'bg-green-50 text-green-700'
+  return 'bg-gray-100 text-gray-600'
+}
+
+function Understanding({ description }) {
+  const [isOpen, setIsOpen] = useState(false)
+  return (
+    <div className="mt-2 text-sm text-gray-600">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="text-xs text-blue-600 underline"
+      >
+        {isOpen ? 'Hide Understanding' : 'Show Understanding'}
+      </button>
+      {isOpen && (
+        <div
+          className="mt-1 rounded bg-gray-50 p-2 text-xs text-gray-700"
+          dangerouslySetInnerHTML={{ __html: description }}
+        />
+      )}
+    </div>
+  )
+}
+
+// Convert an Alpaca bar frame ({T:"b", S, o, h, l, c, v, t}) into the bar shape
+// the charts and indicator math expect.
+function frameToBar(frame) {
+  return {
+    timestamp: frame.t,
+    open: frame.o,
+    high: frame.h,
+    low: frame.l,
+    close: frame.c,
+    volume: frame.v,
+  }
+}
+
+// Append a bar, replacing the last one if it shares a timestamp, and cap length.
+function appendBar(existing, bar) {
+  const bars = existing ? [...existing] : []
+  const last = bars[bars.length - 1]
+  if (last && last.timestamp === bar.timestamp) bars[bars.length - 1] = bar
+  else bars.push(bar)
+  return bars.slice(-MAX_BARS)
 }
 
 export default function OhlcvWebsocket() {
   const [symbols, setSymbols] = useState('AAPL')
   const [channels, setChannels] = useState('bars')
+  const [period, setPeriod] = useState(14)
   const [status, setStatus] = useState('closed')
-  const [messages, setMessages] = useState([])
   const [error, setError] = useState(null)
+  // Accumulated bars per symbol, e.g. { AAPL: [{timestamp, open, ...}, ...] }.
+  const [barsBySymbol, setBarsBySymbol] = useState({})
+  const [frameCount, setFrameCount] = useState(0)
   const wsRef = useRef(null)
+
+  // Indicator catalog + selection (math runs client-side on the live bars).
+  const [catalog, setCatalog] = useState([])
+  const [selected, setSelected] = useState(new Set())
+
+  // Load the available indicators once so the UI is driven by the backend.
+  useEffect(() => {
+    fetch('/api/indicators/catalog')
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((body) => setCatalog(body.indicators))
+      .catch(() => setCatalog([]))
+  }, [])
+
+  function toggleIndicator(key) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   function disconnect() {
     if (wsRef.current) {
@@ -44,7 +124,8 @@ export default function OhlcvWebsocket() {
   function connect() {
     disconnect()
     setError(null)
-    setMessages([])
+    setBarsBySymbol({})
+    setFrameCount(0)
     setStatus('connecting')
 
     const ws = new WebSocket(streamUrl(symbols, channels))
@@ -56,7 +137,7 @@ export default function OhlcvWebsocket() {
       try {
         payload = JSON.parse(event.data)
       } catch {
-        payload = { raw: event.data }
+        return
       }
       // The proxy sends an {error} object on failure, otherwise a batch
       // (array) of Alpaca frames. Flatten batches into individual frames.
@@ -65,11 +146,17 @@ export default function OhlcvWebsocket() {
         return
       }
       const frames = Array.isArray(payload) ? payload : [payload]
-      const at = new Date().toISOString()
-      setMessages((prev) => [
-        ...frames.map((frame) => ({ at, frame })),
-        ...prev,
-      ].slice(0, 200))
+      const bars = frames.filter((f) => f?.T === 'b' && f.S)
+      if (bars.length === 0) return
+
+      setFrameCount((n) => n + bars.length)
+      setBarsBySymbol((prev) => {
+        const next = { ...prev }
+        for (const frame of bars) {
+          next[frame.S] = appendBar(next[frame.S], frameToBar(frame))
+        }
+        return next
+      })
     }
     ws.onerror = () => setStatus('error')
     ws.onclose = () => {
@@ -82,6 +169,7 @@ export default function OhlcvWebsocket() {
   useEffect(() => disconnect, [])
 
   const connected = status === 'open' || status === 'connecting'
+  const symbolList = Object.keys(barsBySymbol).sort()
 
   return (
     <div className="space-y-6">
@@ -115,6 +203,15 @@ export default function OhlcvWebsocket() {
             className="w-48 rounded-md border border-gray-300 px-2 py-1 disabled:bg-gray-50"
           />
         </Field>
+        <Field label="Period">
+          <input
+            type="number"
+            min="2"
+            value={period}
+            onChange={(e) => setPeriod(Number(e.target.value))}
+            className="w-20 rounded-md border border-gray-300 px-2 py-1"
+          />
+        </Field>
         <button
           type="button"
           onClick={connect}
@@ -133,46 +230,122 @@ export default function OhlcvWebsocket() {
         </button>
       </div>
 
+      {/* Indicator selection — driven by the backend catalog, computed live. */}
+      {catalog.length > 0 && (
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+            Indicators
+          </p>
+          <div className="flex flex-wrap gap-x-6 gap-y-2">
+            {catalog.map((meta) => (
+              <label
+                key={meta.key}
+                className="flex items-center gap-2 text-sm"
+                title={meta.description}
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(meta.key)}
+                  onChange={() => toggleIndicator(meta.key)}
+                />
+                {meta.label}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && (
         <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </p>
       )}
 
-      <div className="space-y-2">
-        <p className="text-sm text-gray-600">
-          {messages.length} frame{messages.length === 1 ? '' : 's'} received
+      <p className="text-sm text-gray-600">
+        {frameCount} bar{frameCount === 1 ? '' : 's'} received
+        {symbolList.length > 0 && ` · ${symbolList.length} symbol${
+          symbolList.length === 1 ? '' : 's'
+        }`}
+      </p>
+
+      {symbolList.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-400">
+          No bar data yet. Connect to start streaming (the chart needs the{' '}
+          <span className="font-mono">bars</span> channel).
         </p>
-        {messages.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center text-sm text-gray-400">
-            No data yet. Connect to start streaming.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {messages.map((msg, i) => (
-              <li
-                key={`${msg.at}-${i}`}
+      ) : (
+        symbolList.map((symbol) => (
+          <SymbolPanel
+            key={symbol}
+            symbol={symbol}
+            bars={barsBySymbol[symbol]}
+            period={period}
+            catalog={catalog}
+            selected={selected}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+// One live candlestick chart plus its indicator cards for a single symbol.
+// Indicators are recomputed on every new bar so they update in real time.
+function SymbolPanel({ symbol, bars, period, catalog, selected }) {
+  const indicators = useMemo(
+    () => computeIndicators(bars, period, LIVE_TIMEFRAME, catalog, selected),
+    [bars, period, catalog, selected],
+  )
+  const shownIndicators = Object.values(indicators)
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">{symbol}</h2>
+        <span className="text-sm text-gray-500">{bars.length} bars</span>
+      </div>
+
+      <div className="rounded-lg border border-gray-200 bg-white p-2">
+        <CandlestickChart bars={bars} height={400} />
+      </div>
+
+      {shownIndicators.length > 0 && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {shownIndicators.map((ind, i) => {
+            const meta = catalog.find((c) => c.key === ind.key)
+            return (
+              <div
+                key={ind.key}
                 className="rounded-lg border border-gray-200 bg-white p-3"
               >
-                <p className="mb-1 flex items-center gap-2 font-mono text-xs text-gray-400">
-                  <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600">
-                    {FRAME_LABEL[msg.frame?.T] ?? msg.frame?.T ?? 'frame'}
+                <div className="mb-2 flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-semibold">{ind.label}</h3>
+                    <p className="text-xs text-gray-500">
+                      latest: {formatNumber(ind.latest)}
+                      {ind.extra?.annualized != null &&
+                        ` · annualized: ${formatNumber(ind.extra.annualized)}`}
+                      {ind.extra?.mfi != null &&
+                        ` · MFI: ${formatNumber(ind.extra.mfi)}`}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs ${readingTone(ind.reading)}`}
+                  >
+                    {ind.reading}
                   </span>
-                  {msg.frame?.S && (
-                    <span className="font-semibold text-gray-700">
-                      {msg.frame.S}
-                    </span>
-                  )}
-                  {msg.at}
-                </p>
-                <pre className="overflow-x-auto whitespace-pre-wrap break-words text-xs text-gray-700">
-                  {JSON.stringify(msg.frame, null, 2)}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                </div>
+                <IndicatorChart
+                  points={ind.series[ind.key] ?? []}
+                  color={LINE_COLORS[i % LINE_COLORS.length]}
+                  height={140}
+                />
+                {meta && <Understanding description={meta.description} />}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
