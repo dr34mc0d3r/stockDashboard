@@ -1,7 +1,9 @@
 import asyncio
 import json
+import ssl
 from collections.abc import AsyncIterator
 
+import certifi
 import websocket  # provided by the "websocket-client" package
 
 from config import ALPACA_API_KEY, ALPACA_SECRET_KEY
@@ -13,6 +15,15 @@ STREAM_URL = "wss://stream.data.alpaca.markets/v2/iex"
 # Channels that can be subscribed to per symbol: "bars", "trades", "quotes".
 DEFAULT_CHANNELS = ["bars"]
 DEFAULT_SYMBOLS = ["AAPL"]
+
+# How long a single read waits before yielding a keepalive. Bars arrive at most
+# once a minute and only during market hours, so quiet periods are normal.
+READ_TIMEOUT = 30
+
+# Sent to the browser when a read times out: keeps the proxy<->browser socket
+# alive (and lets us notice if the client went away). The frontend ignores any
+# frame whose "T" isn't a recognised market-data type.
+HEARTBEAT = [{"T": "keepalive"}]
 
 
 class AlpacaWebSocketError(Exception):
@@ -78,8 +89,17 @@ class AlpacaWebSocketClient:
         Returns the subscription-confirmation message from Alpaca. Raises
         AlpacaWebSocketError on connection or authentication failure.
         """
+        # Verify Alpaca's TLS cert against certifi's CA bundle. Python installs
+        # on macOS (and minimal Linux images) often can't find a system CA
+        # store, which surfaces as "CERTIFICATE_VERIFY_FAILED".
+        sslopt = {
+            "cert_reqs": ssl.CERT_REQUIRED,
+            "ca_certs": certifi.where(),
+        }
         try:
-            self._ws = websocket.create_connection(STREAM_URL, timeout=30)
+            self._ws = websocket.create_connection(
+                STREAM_URL, timeout=READ_TIMEOUT, sslopt=sslopt
+            )
         except Exception as e:  # OSError, WebSocketException, etc.
             raise AlpacaWebSocketError(f"Could not reach Alpaca stream: {e}")
 
@@ -93,11 +113,18 @@ class AlpacaWebSocketClient:
         return json.loads(self._ws.recv())  # subscription confirmation
 
     def recv(self) -> list | None:
-        """Block for the next batch of frames. Returns None when closed."""
+        """Block for the next batch of frames.
+
+        Returns None when the connection is closed, the HEARTBEAT batch when the
+        read times out (a normal occurrence during quiet/closed markets), or the
+        decoded frames otherwise.
+        """
         if self._ws is None:
             return None
         try:
             raw = self._ws.recv()
+        except websocket.WebSocketTimeoutException:
+            return HEARTBEAT
         except websocket.WebSocketConnectionClosedException:
             return None
         return json.loads(raw) if raw else None
