@@ -140,7 +140,7 @@ function moneyFlowRatio(bars, period) {
 
   const latest = lastNonNull(series)
   let reading
-  if (latest == null) reading = 'no selling pressure in window — heavy buying'
+  if (latest == null) reading = 'buying — no selling pressure in window'
   else if (latest > 1.2) reading = 'buying — money flow favors the ask'
   else if (latest < 0.8) reading = 'selling — money flow favors the bid'
   else reading = 'balanced — buyers and sellers roughly even'
@@ -187,13 +187,19 @@ function vwapZscore(bars, period) {
   return { latest, reading, lines: { vwap_zscore: series } }
 }
 
-// Registry keyed by the same keys the backend catalog uses.
+// Registry keyed by the same keys the backend catalog uses. Only indicators
+// ported to JS here can be computed live; the historical page (which calls the
+// backend) supports the full catalog.
 const COMPUTERS = {
   parkinson_volatility: parkinsonVolatility,
   acceleration,
   money_flow_ratio: moneyFlowRatio,
   vwap_zscore: vwapZscore,
 }
+
+// Catalog keys the live page can compute in-browser. Used to hide indicators
+// that only the backend (historical page) supports.
+export const SUPPORTED_KEYS = new Set(Object.keys(COMPUTERS))
 
 /**
  * Compute the requested indicators over a live bar list. Mirrors the shape the

@@ -13,12 +13,20 @@ function formatNumber(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 
+// Color a reading by its leading keyword (each reading starts with a tone
+// word, e.g. "bullish — …", "overbought — …"). Anything unrecognized — and
+// non-directional readings like "expanding"/"steady" — stays neutral gray.
+const RED_WORDS = new Set([
+  'panic', 'exhausting', 'selling', 'overextended', 'bearish',
+  'overbought', 'distribution',
+])
+const GREEN_WORDS = new Set([
+  'buying', 'sustainable', 'calm', 'bullish', 'oversold', 'accumulation',
+])
 function readingTone(reading) {
-  const r = reading.toLowerCase()
-  if (/(panic|exhausting|selling|overextended)/.test(r))
-    return 'bg-red-50 text-red-700'
-  if (/(buying|sustainable|building|calm)/.test(r))
-    return 'bg-green-50 text-green-700'
+  const first = reading.toLowerCase().split(/\s+/)[0]
+  if (RED_WORDS.has(first)) return 'bg-red-50 text-red-700'
+  if (GREEN_WORDS.has(first)) return 'bg-green-50 text-green-700'
   return 'bg-gray-100 text-gray-600'
 }
 
@@ -34,7 +42,7 @@ function Understanding({ description }) {
       </button>
       {isOpen && (
         <div
-          className="mt-1 rounded bg-gray-50 p-2 text-xs text-gray-700"
+          className="mt-1 space-y-1 rounded bg-gray-50 p-2 text-xs text-gray-700 [&_li]:mt-1 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
           dangerouslySetInnerHTML={{ __html: description }}
         />
       )}
@@ -48,7 +56,6 @@ export default function Ohlcv() {
     start: '2026-05-15',
     end: '2026-05-20',
     timeframe: '1h',
-    period: 14,
   })
   // The form values from the last successful submit (drives indicator fetches).
   const [query, setQuery] = useState(null)
@@ -60,11 +67,31 @@ export default function Ohlcv() {
   // Indicator catalog + selection + results.
   const [catalog, setCatalog] = useState([])
   const [selected, setSelected] = useState(new Set())
+  // Per-indicator param overrides, e.g. { macd: { fast: 12 } }. Anything not
+  // set here falls back to the catalog default via paramsForKey().
+  const [paramValues, setParamValues] = useState({})
   const [indicators, setIndicators] = useState({})
   const [indError, setIndError] = useState(null)
 
   const update = (key) => (e) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }))
+
+  // Effective params for an indicator: catalog defaults merged with any
+  // user overrides. Always returns a value for every declared param.
+  function paramsForKey(key) {
+    const meta = catalog.find((c) => c.key === key)
+    const defaults = Object.fromEntries(
+      (meta?.params ?? []).map((p) => [p.name, p.default]),
+    )
+    return { ...defaults, ...(paramValues[key] ?? {}) }
+  }
+
+  function setParam(key, name, value) {
+    setParamValues((prev) => ({
+      ...prev,
+      [key]: { ...(prev[key] ?? {}), [name]: value },
+    }))
+  }
 
   // Load the available indicators once so the UI is driven by the backend.
   useEffect(() => {
@@ -110,40 +137,49 @@ export default function Ohlcv() {
     }
   }
 
-  // Fetch indicators whenever the submitted query or the selection changes.
-  // State is only set inside async callbacks (never synchronously in the
-  // effect body), and stale requests are ignored via the cancelled flag.
+  // Fetch indicators whenever the submitted query, the selection, or any
+  // indicator's params change. Debounced so dragging a param input doesn't
+  // fire a request per keystroke. Stale requests are ignored via `cancelled`.
   useEffect(() => {
     if (!query || selected.size === 0) return
     let cancelled = false
-    const params = new URLSearchParams({
+    const keys = [...selected]
+    const body = {
       symbol: query.symbol,
       start: query.start,
       end: query.end,
       timeframe: query.timeframe,
-      period: query.period,
-      include: [...selected].join(','),
-    })
-    fetch(`/api/indicators?${params}`)
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}))
-          throw new Error(body.detail || `Request failed (${res.status})`)
-        }
-        return res.json()
+      include: keys,
+      params: Object.fromEntries(keys.map((k) => [k, paramsForKey(k)])),
+    }
+    const handle = setTimeout(() => {
+      fetch('/api/indicators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
-      .then((body) => {
-        if (cancelled) return
-        setIndicators(body.indicators)
-        setIndError(null)
-      })
-      .catch((err) => {
-        if (!cancelled) setIndError(err.message)
-      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}))
+            throw new Error(errBody.detail || `Request failed (${res.status})`)
+          }
+          return res.json()
+        })
+        .then((resBody) => {
+          if (cancelled) return
+          setIndicators(resBody.indicators)
+          setIndError(null)
+        })
+        .catch((err) => {
+          if (!cancelled) setIndError(err.message)
+        })
+    }, 350)
     return () => {
       cancelled = true
+      clearTimeout(handle)
     }
-  }, [query, selected])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, selected, paramValues])
 
   // Only show indicators that are currently selected.
   const shownIndicators = Object.values(indicators).filter((ind) =>
@@ -194,15 +230,6 @@ export default function Ohlcv() {
             ))}
           </select>
         </Field>
-        <Field label="Period">
-          <input
-            type="number"
-            min="2"
-            value={form.period}
-            onChange={update('period')}
-            className="w-20 rounded-md border border-gray-300 px-2 py-1"
-          />
-        </Field>
         <button
           type="submit"
           disabled={loading}
@@ -218,21 +245,49 @@ export default function Ohlcv() {
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
             Indicators
           </p>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {catalog.map((meta) => (
-              <label
-                key={meta.key}
-                className="flex items-center gap-2 text-sm"
-                title={meta.description}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(meta.key)}
-                  onChange={() => toggleIndicator(meta.key)}
-                />
-                {meta.label}
-              </label>
-            ))}
+          <div className="flex flex-col gap-2">
+            {catalog.map((meta) => {
+              const isOn = selected.has(meta.key)
+              const values = paramsForKey(meta.key)
+              return (
+                <div
+                  key={meta.key}
+                  className="flex flex-wrap items-center gap-x-4 gap-y-1"
+                >
+                  <label
+                    className="flex items-center gap-2 text-sm"
+                    title={meta.description}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isOn}
+                      onChange={() => toggleIndicator(meta.key)}
+                    />
+                    {meta.label}
+                  </label>
+                  {isOn &&
+                    (meta.params ?? []).map((p) => (
+                      <label
+                        key={p.name}
+                        className="flex items-center gap-1 text-xs text-gray-500"
+                      >
+                        {p.label}
+                        <input
+                          type="number"
+                          value={values[p.name]}
+                          min={p.min ?? undefined}
+                          max={p.max ?? undefined}
+                          step={p.step ?? (p.type === 'float' ? 0.1 : 1)}
+                          onChange={(e) =>
+                            setParam(meta.key, p.name, Number(e.target.value))
+                          }
+                          className="w-16 rounded border border-gray-300 px-1 py-0.5"
+                        />
+                      </label>
+                    ))}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -260,7 +315,7 @@ export default function Ohlcv() {
           )}
           {shownIndicators.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
-              {shownIndicators.map((ind, i) => {
+              {shownIndicators.map((ind) => {
                 const meta = catalog.find((c) => c.key === ind.key)
                 return (
                   <div
@@ -276,6 +331,8 @@ export default function Ohlcv() {
                             ` · annualized: ${formatNumber(ind.extra.annualized)}`}
                           {ind.extra?.mfi != null &&
                             ` · MFI: ${formatNumber(ind.extra.mfi)}`}
+                          {ind.extra?.histogram != null &&
+                            ` · hist: ${formatNumber(ind.extra.histogram)}`}
                         </p>
                       </div>
                       <span
@@ -284,9 +341,32 @@ export default function Ohlcv() {
                         {ind.reading}
                       </span>
                     </div>
+                    {(() => {
+                      const names = Object.keys(ind.series)
+                      return (
+                        names.length > 1 && (
+                          <div className="mb-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                            {names.map((name, j) => (
+                              <span key={name} className="flex items-center gap-1">
+                                <span
+                                  className="inline-block h-2 w-2 rounded-full"
+                                  style={{
+                                    backgroundColor:
+                                      LINE_COLORS[j % LINE_COLORS.length],
+                                  }}
+                                />
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )
+                      )
+                    })()}
                     <IndicatorChart
-                      points={ind.series[ind.key] ?? []}
-                      color={LINE_COLORS[i % LINE_COLORS.length]}
+                      lines={Object.values(ind.series).map((points, j) => ({
+                        points,
+                        color: LINE_COLORS[j % LINE_COLORS.length],
+                      }))}
                       height={140}
                     />
                     {meta && <Understanding description={meta.description} />}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { ColorType, LineSeries, createChart } from 'lightweight-charts'
 import { useChartSync } from '../lib/chartSync.js'
 
@@ -32,12 +32,28 @@ function precisionFor(line) {
   return 6
 }
 
-/** Reusable line chart for a single indicator series (pan/zoom native). */
-export default function IndicatorChart({ points = [], height = 140, color = '#2563eb' }) {
+/**
+ * Reusable line chart for one or more indicator series (pan/zoom native).
+ *
+ * Pass a single series via `points` (+ optional `color`), or several at once
+ * via `lines` ([{ points, color }]) for multi-line indicators like MACD or
+ * Bollinger Bands. `lines` takes precedence when provided.
+ */
+export default function IndicatorChart({
+  points = [],
+  lines = null,
+  height = 140,
+  color = '#2563eb',
+}) {
   const containerRef = useRef(null)
   const chartRef = useRef(null)
-  const seriesRef = useRef(null)
+  const seriesRef = useRef([])
   const sync = useChartSync()
+
+  const defs = useMemo(() => lines ?? [{ points, color }], [lines, points, color])
+  // Recreate the chart only when the series shape (count + colors) changes;
+  // data updates are handled by the second effect.
+  const shapeKey = defs.map((d) => d.color).join(',')
 
   useEffect(() => {
     const container = containerRef.current
@@ -64,29 +80,35 @@ export default function IndicatorChart({ points = [], height = 140, color = '#25
       handleScale: true,
     })
 
-    const series = chart.addSeries(LineSeries, { color, lineWidth: 2 })
+    seriesRef.current = defs.map((d) =>
+      chart.addSeries(LineSeries, { color: d.color, lineWidth: 2 }),
+    )
     chartRef.current = chart
-    seriesRef.current = series
     const unregister = sync?.register(chart)
 
     return () => {
       unregister?.()
       chart.remove()
       chartRef.current = null
-      seriesRef.current = null
+      seriesRef.current = []
     }
-  }, [color, sync])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapeKey, sync])
 
   useEffect(() => {
-    if (!seriesRef.current) return
-    const line = toLine(points)
-    const precision = precisionFor(line)
-    seriesRef.current.applyOptions({
-      priceFormat: { type: 'price', precision, minMove: 10 ** -precision },
+    if (!chartRef.current) return
+    defs.forEach((d, idx) => {
+      const series = seriesRef.current[idx]
+      if (!series) return
+      const line = toLine(d.points)
+      const precision = precisionFor(line)
+      series.applyOptions({
+        priceFormat: { type: 'price', precision, minMove: 10 ** -precision },
+      })
+      series.setData(line)
     })
-    seriesRef.current.setData(line)
-    chartRef.current?.timeScale().fitContent()
-  }, [points])
+    chartRef.current.timeScale().fitContent()
+  }, [defs])
 
   return <div ref={containerRef} className="w-full" style={{ height }} />
 }

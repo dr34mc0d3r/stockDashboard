@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CandlestickChart from '../components/CandlestickChart.jsx'
 import IndicatorChart from '../components/IndicatorChart.jsx'
-import { computeIndicators } from '../lib/indicators.js'
+import { computeIndicators, SUPPORTED_KEYS } from '../lib/indicators.js'
 import { ChartSyncProvider } from '../lib/chartSync.js'
 
 // Build the ws:// (or wss://) URL for the backend stream proxy, reusing the
@@ -33,12 +33,20 @@ function formatNumber(value) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 4 })
 }
 
+// Color a reading by its leading keyword (each reading starts with a tone
+// word, e.g. "bullish — …", "overbought — …"). Anything unrecognized — and
+// non-directional readings like "expanding"/"steady" — stays neutral gray.
+const RED_WORDS = new Set([
+  'panic', 'exhausting', 'selling', 'overextended', 'bearish',
+  'overbought', 'distribution',
+])
+const GREEN_WORDS = new Set([
+  'buying', 'sustainable', 'calm', 'bullish', 'oversold', 'accumulation',
+])
 function readingTone(reading) {
-  const r = reading.toLowerCase()
-  if (/(panic|exhausting|selling|overextended)/.test(r))
-    return 'bg-red-50 text-red-700'
-  if (/(buying|sustainable|building|calm)/.test(r))
-    return 'bg-green-50 text-green-700'
+  const first = reading.toLowerCase().split(/\s+/)[0]
+  if (RED_WORDS.has(first)) return 'bg-red-50 text-red-700'
+  if (GREEN_WORDS.has(first)) return 'bg-green-50 text-green-700'
   return 'bg-gray-100 text-gray-600'
 }
 
@@ -54,7 +62,7 @@ function Understanding({ description }) {
       </button>
       {isOpen && (
         <div
-          className="mt-1 rounded bg-gray-50 p-2 text-xs text-gray-700"
+          className="mt-1 space-y-1 rounded bg-gray-50 p-2 text-xs text-gray-700 [&_li]:mt-1 [&_ul]:list-disc [&_ul]:space-y-1 [&_ul]:pl-5"
           dangerouslySetInnerHTML={{ __html: description }}
         />
       )}
@@ -100,10 +108,14 @@ export default function OhlcvWebsocket() {
   const [selected, setSelected] = useState(new Set())
 
   // Load the available indicators once so the UI is driven by the backend.
+  // The live page computes indicators in-browser, so it only offers the subset
+  // ported to lib/indicators.js (SUPPORTED_KEYS); the rest are backend-only.
   useEffect(() => {
     fetch('/api/indicators/catalog')
       .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((body) => setCatalog(body.indicators))
+      .then((body) =>
+        setCatalog(body.indicators.filter((m) => SUPPORTED_KEYS.has(m.key))),
+      )
       .catch(() => setCatalog([]))
   }, [])
 

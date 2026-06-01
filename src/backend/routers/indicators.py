@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 
-from models import IndicatorCatalog, IndicatorsResponse
+from models import IndicatorCatalog, IndicatorsRequest, IndicatorsResponse
 from services import indicators as ind
 from services.alpaca_client import (
     TIMEFRAME_MAP,
@@ -17,31 +17,27 @@ def get_catalog():
     return {"indicators": ind.available()}
 
 
-@router.get("/indicators", response_model=IndicatorsResponse)
-def get_indicators(
-    symbol: str = Query(..., description="Ticker symbol, e.g. AAPL"),
-    start: str = Query(..., description="Start date (YYYY-MM-DD)"),
-    end: str = Query(..., description="End date (YYYY-MM-DD)"),
-    timeframe: str = Query("1d", description=f"One of {list(TIMEFRAME_MAP)}"),
-    period: int = Query(14, ge=2, description="Lookback window in bars"),
-    include: str = Query(
-        "all",
-        description="Comma-separated indicator keys, or 'all'. See /api/indicators/catalog.",
-    ),
-):
-    """Compute the requested indicators over the OHLCV bars for a symbol."""
-    if timeframe not in TIMEFRAME_MAP:
+@router.post("/indicators", response_model=IndicatorsResponse)
+def get_indicators(req: IndicatorsRequest):
+    """Compute the requested indicators over the OHLCV bars for a symbol.
+
+    Indicators are POSTed with per-indicator params because different
+    indicators take different tunables (MACD's fast/slow/signal, Bollinger's
+    period + std-dev multiplier, …) that don't fit a single query parameter.
+    """
+    if req.timeframe not in TIMEFRAME_MAP:
         raise HTTPException(
             status_code=400,
             detail=f"Invalid timeframe. Choose from: {list(TIMEFRAME_MAP)}",
         )
     try:
-        keys = ind.resolve_keys(include)
+        # resolve_keys takes the legacy comma-string form; "all" when unset.
+        keys = ind.resolve_keys(",".join(req.include) if req.include else "all")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     try:
-        data = fetch_historical_ohlcv(symbol, timeframe, start, end)
+        data = fetch_historical_ohlcv(req.symbol, req.timeframe, req.start, req.end)
     except AlpacaError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e))
 
@@ -50,7 +46,8 @@ def get_indicators(
         "timeframe": data["timeframe"],
         "start": data["start"],
         "end": data["end"],
-        "period": period,
         "results_count": len(data["bars"]),
-        "indicators": ind.compute(data["bars"], period, data["timeframe"], keys),
+        "indicators": ind.compute(
+            data["bars"], data["timeframe"], keys, req.params
+        ),
     }
