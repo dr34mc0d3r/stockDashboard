@@ -19,7 +19,11 @@
       "Bash(python3 -c \"import certifi; print\\(certifi.where\\(\\)\\)\")",
       "Bash(../../.venv/bin/python -c \"import ssl, certifi; print\\('certifi bundle:', certifi.where\\(\\)\\); import ast; ast.parse\\(open\\('services/alpaca_client_websocket.py'\\).read\\(\\)\\); print\\('syntax OK'\\)\")",
       "Bash(python -m pytest src/backend/tests/test_indicators.py -q)",
-      "Bash(python -m pytest src/backend/tests/ -q)"
+      "Bash(python -m pytest src/backend/tests/ -q)",
+      "Bash(.venv/bin/python --version)",
+      "Bash(.venv/bin/pip list *)",
+      "Bash(uv pip *)",
+      "Bash(PYTHONPATH=src/backend .venv/bin/python *)"
     ]
   }
 }
