@@ -1,0 +1,49 @@
+services:
+  mariadb:
+    image: mariadb:10.11 # Latest LTS as of 2025
+    container_name: mysql_db
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-app_db}
+      - MYSQL_USER=${MYSQL_USER:-app_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-app_password}
+      - TZ=America/New_York
+    ports:
+      - "0.0.0.0:3306:3306" # Expose to all interfaces for remote access
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./mysql-conf:/etc/mysql/mariadb.conf.d:ro
+    networks:
+      - mariadb_network
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          memory: 256M
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      - "com.example.description=MariaDB database service"
+      - "com.example.environment=development"
+
+volumes:
+  mariadb_data:
+    name: mariadb_data
+    driver: local
+
+networks:
+  mariadb_network:
+    name: mariadb_network
+    driver: bridge
