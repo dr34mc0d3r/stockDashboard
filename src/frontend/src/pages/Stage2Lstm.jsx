@@ -74,14 +74,14 @@ const STAGE_FILES = [
       { path: 'src/backend/services/datasets.py', desc: 'Turns raw OHLCV into supervised windows. Derives stationary return features (ln(O/H/L/C / prev_close) + log1p(volume)) so price-level scale never crushes the signal, labels each window from the real close price, splits 70/15/15 by time, and fits the scaler on training rows only (leakage-safe).' },
       { path: 'src/backend/services/training/trainer.py', desc: 'The background training loop, run in a daemon thread so the API stays responsive. Trains with Adam + BCEWithLogitsLoss, a ReduceLROnPlateau scheduler, and early stopping; writes per-epoch metrics (train/val loss, val accuracy, learning rate) to the run row for live polling; then scores the held-out test set and saves the model artifact.' },
       { path: 'src/backend/ml/registry.py', desc: 'Saves/loads a trained model as one self-contained .pt bundle = weights + hyperparams + scaler stats + metrics, under src/backend/artifacts/ (gitignored). Lets a run be reloaded later with identical preprocessing.' },
-      { path: 'src/backend/services/predict_service.py', desc: 'Overlay inference: loads a saved run, runs it over the most recent bars using the exact training pipeline (return features + the saved scaler, no refit), and returns each candle\'s predicted direction + actual outcome for charting.' },
+      { path: 'src/backend/services/predict_service.py', desc: 'Overlay inference: loads a saved run and runs it (return features + the saved scaler, no refit) over the most-recent bars within the run\'s stored slice, clamped to the held-out test region so the overlay is strictly out-of-sample. Returns each candle\'s predicted direction + actual outcome.' },
       { path: 'src/backend/routers/train.py', desc: 'Defines POST /api/v1/train/lstm (creates a queued TrainingRun and spawns the worker), GET /api/v1/runs (list), GET /api/v1/runs/{id} (poll live progress), and GET /api/v1/runs/{id}/predictions (per-candle calls for the overlay chart).' },
     ],
   },
   {
     label: 'Backend — shared infrastructure',
     files: [
-      { path: 'src/backend/models.py', desc: 'Adds TrainingRun (stage, hyperparams/metrics/progress JSON, status, artifact path) — the row the UI polls during training — and FeatureCache (used from Stage 3 on).' },
+      { path: 'src/backend/models.py', desc: 'Adds TrainingRun (stage, data slice start/end, hyperparams/metrics/progress JSON, status, artifact path) — the row the UI polls during training — and FeatureCache (used from Stage 3 on).' },
       { path: 'src/backend/schemas.py', desc: 'Adds LstmHyperParams (defaults and bounds for seq_len, horizon, hidden, layers, dropout, lr, batch, epochs, patience, lr_factor, lr_patience), TrainLstmRequest, and TrainingRunOut.' },
       { path: 'src/backend/main.py · db.py · config.py', desc: 'The shared FastAPI app, SQLAlchemy engine/session, and config (see Stage 1 for detail). The training router is registered in main.py; the trainer opens its own DB session via SessionLocal.' },
     ],
@@ -348,8 +348,12 @@ export default function Stage2Lstm() {
                   </button>
                   <span className="text-xs text-slate-500">
                     <span className="text-emerald-400">▲ green</span> = predicted up ·{' '}
-                    <span className="text-red-400">▼ red</span> = predicted down · most recent
-                    candles
+                    <span className="text-red-400">▼ red</span> = predicted down ·{' '}
+                    {overlay
+                      ? overlay.out_of_sample
+                        ? 'held-out test region'
+                        : 'recent bars'
+                      : 'most recent candles'}
                   </span>
                 </div>
                 {overlay && overlay.bars.length > 0 && (
@@ -368,8 +372,10 @@ export default function Stage2Lstm() {
                     <p className="text-xs text-slate-500">
                       Each arrow is the model's call at that candle for the next one. Compare the
                       arrow to the candle that follows — over many candles you'll feel why ~50%
-                      accuracy looks like noise. (Recent bars may overlap training data; this view
-                      is illustrative.)
+                      accuracy looks like noise.{' '}
+                      {overlay.out_of_sample
+                        ? 'These are the held-out test candles the model never trained on.'
+                        : 'This run predates slice tracking, so these are recent bars and may overlap training data — illustrative only.'}
                     </p>
                   </>
                 )}

@@ -91,6 +91,7 @@ class PredictionsOut(BaseModel):
     timeframe: str
     seq_len: int
     horizon: int
+    out_of_sample: bool  # True when markers are confined to the held-out test region
     bars: list[BarOut]
     predictions: list[PredictionPoint]
 
@@ -100,6 +101,8 @@ class TrainingRunOut(BaseModel):
     stage: str
     symbol: str
     timeframe: str
+    start: str | None
+    end: str | None
     status: str
     hyperparams: dict[str, Any]
     progress: list[Any]

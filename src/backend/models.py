@@ -63,6 +63,9 @@ class TrainingRun(Base):
     stage: Mapped[str] = mapped_column(String(32))  # e.g. "lstm"
     symbol: Mapped[str] = mapped_column(String(16))
     timeframe: Mapped[str] = mapped_column(String(8))
+    # The data slice the run trained on (nullable; older rows predate this).
+    start: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    end: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="queued")
     hyperparams: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     progress: Mapped[list[Any]] = mapped_column(JSON, default=list)  # per-epoch metrics
