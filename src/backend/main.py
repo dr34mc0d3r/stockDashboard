@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import models  # noqa: F401  (register ORM models on Base before create_all)
 from config import CORS_ORIGINS
 from db import Base, engine
-from routers import data, ingest
+from routers import data, ingest, train
 
 
 @asynccontextmanager
@@ -30,6 +30,7 @@ app.add_middleware(
 
 app.include_router(ingest.router)
 app.include_router(data.router)
+app.include_router(train.router)
 
 
 @app.get("/health", tags=["health"])

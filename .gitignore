@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Saved model artifacts (.pt bundles)
+src/backend/artifacts/
+
 # Secrets / credentials
 .env
 *.env

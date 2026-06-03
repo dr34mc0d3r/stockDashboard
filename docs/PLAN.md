@@ -36,14 +36,14 @@ docs in [`documentation.md`](./documentation.md).
 | Frontend shell + ordered stage stepper | ✅ | `App.jsx`, `components/Stepper.jsx` |
 | Markdown lesson panel | ✅ | `components/LessonPanel.jsx` (`?raw` import) |
 | Price chart (candles + volume, legend, pan/zoom) | ✅ | `charts/PriceChart.jsx` |
-| **`training_runs` table** (stage, hyperparams JSON, metrics JSON, artifact path, status) | 🔲 | needed from Stage 2 on |
-| **`feature_cache` table** (symbol, timeframe, ts, feature_set, payload JSON) | 🔲 | needed from Stage 3 on |
-| **Model registry** (save/load `.pt` + config + scaler) | 🔲 | `ml/registry.py` |
-| **Background training jobs + progress streaming** (WS or polling) | 🔲 | so UI stays responsive during training |
-| **Dataset builder** (windowing, time-ordered splits, scaling) | 🔲 | `services/datasets.py`; guard against leakage |
-| **PyTorch installable** | ✅ | project pinned to **Python 3.11** (`.python-version`, `requires-python>=3.11,<3.13`); `torch==2.2.2` resolves with an Intel-Mac wheel (last x86_64 build). Not yet added to deps — added at Stage 2 start. |
+| **`training_runs` table** (stage, hyperparams JSON, metrics JSON, artifact path, status) | ✅ | `models.py` `TrainingRun` (+ `progress` JSON for live polling) |
+| **`feature_cache` table** (symbol, timeframe, ts, feature_set, payload JSON) | ✅ | `models.py` `FeatureCache`; wired in from Stage 3 |
+| **Model registry** (save/load `.pt` + config + scaler) | ✅ | `ml/registry.py`; bundles weights + hyperparams + scaler |
+| **Background training jobs + progress streaming** (WS or polling) | ✅ | threaded worker writes per-epoch progress to the run row; UI polls `GET /runs/{id}` |
+| **Dataset builder** (windowing, time-ordered splits, scaling) | ✅ | `services/datasets.py`; per-segment windowing + train-only scaler (leakage-safe) |
+| **PyTorch installed** | ✅ | `torch==2.2.2` (last Intel-Mac wheel) on Python 3.11; **pinned `numpy<2`** (1.26.4) — torch 2.2.2 can't run against NumPy 2.x |
 | **Indicator module** (the 10 indicators, params, toggles) | 🔲 | `services/features/indicators.py`; reuse srcV1 logic |
-| **MetricsChart / TrainingProgress / HyperParamForm components** | 🔲 | reusable across stages |
+| **MetricsChart / TrainingProgress / HyperParamForm components** | 🔲 | reusable across stages — **next up** (Stage 2 frontend) |
 
 ---
 
