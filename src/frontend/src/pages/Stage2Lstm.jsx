@@ -3,6 +3,7 @@ import LessonPanel from '../components/LessonPanel.jsx'
 import HyperParamForm from '../components/HyperParamForm.jsx'
 import MetricsChart from '../components/MetricsChart.jsx'
 import TrainingProgress from '../components/TrainingProgress.jsx'
+import FilesPanel from '../components/FilesPanel.jsx'
 import { getInventory, trainLstm, getRun } from '../api/client.js'
 
 import whatMd from '../content/stage2.what.md?raw'
@@ -29,6 +30,47 @@ const HP_DEFAULTS = {
 }
 
 const ACTIVE = (s) => s === 'queued' || s === 'running'
+
+// The source files behind this stage, with what each one does.
+const STAGE_FILES = [
+  {
+    label: 'Backend — model & training',
+    files: [
+      { path: 'src/backend/ml/models/lstm.py', desc: 'Defines LSTMClassifier — an nn.LSTM whose final-timestep hidden state passes through a dropout + linear head to a single logit (probability of "up") — plus build_model(), which constructs it from a hyperparameter dict.' },
+      { path: 'src/backend/services/datasets.py', desc: 'Turns raw OHLCV into supervised windows. Derives stationary return features (ln(O/H/L/C / prev_close) + log1p(volume)) so price-level scale never crushes the signal, labels each window from the real close price, splits 70/15/15 by time, and fits the scaler on training rows only (leakage-safe).' },
+      { path: 'src/backend/services/training/trainer.py', desc: 'The background training loop, run in a daemon thread so the API stays responsive. Trains with Adam + BCEWithLogitsLoss, a ReduceLROnPlateau scheduler, and early stopping; writes per-epoch metrics (train/val loss, val accuracy, learning rate) to the run row for live polling; then scores the held-out test set and saves the model artifact.' },
+      { path: 'src/backend/ml/registry.py', desc: 'Saves/loads a trained model as one self-contained .pt bundle = weights + hyperparams + scaler stats + metrics, under src/backend/artifacts/ (gitignored). Lets a run be reloaded later with identical preprocessing.' },
+      { path: 'src/backend/routers/train.py', desc: 'Defines POST /api/v1/train/lstm (creates a queued TrainingRun and spawns the worker thread), GET /api/v1/runs (list past runs), and GET /api/v1/runs/{id} (poll one run\'s live progress).' },
+    ],
+  },
+  {
+    label: 'Backend — shared infrastructure',
+    files: [
+      { path: 'src/backend/models.py', desc: 'Adds TrainingRun (stage, hyperparams/metrics/progress JSON, status, artifact path) — the row the UI polls during training — and FeatureCache (used from Stage 3 on).' },
+      { path: 'src/backend/schemas.py', desc: 'Adds LstmHyperParams (defaults and bounds for seq_len, horizon, hidden, layers, dropout, lr, batch, epochs, patience, lr_factor, lr_patience), TrainLstmRequest, and TrainingRunOut.' },
+      { path: 'src/backend/main.py · db.py · config.py', desc: 'The shared FastAPI app, SQLAlchemy engine/session, and config (see Stage 1 for detail). The training router is registered in main.py; the trainer opens its own DB session via SessionLocal.' },
+    ],
+  },
+  {
+    label: 'Frontend',
+    files: [
+      { path: 'src/frontend/src/pages/Stage2Lstm.jsx', desc: 'This page. An inventory-backed data-source selector + optional date slice, the hyperparameter form, the Train button, and a Run→Results section that polls the run every 1.5s while it trains.' },
+      { path: 'src/frontend/src/components/HyperParamForm.jsx', desc: 'Reusable numeric hyperparameter grid driven by a field spec — used here for the LSTM params, and by later stages for theirs.' },
+      { path: 'src/frontend/src/components/MetricsChart.jsx', desc: 'Reusable inline-SVG charts that update live: Loss (train vs val), Learning rate, and Validation accuracy across epochs.' },
+      { path: 'src/frontend/src/components/TrainingProgress.jsx', desc: 'Reusable status panel: status badge, live epoch counter, final test metrics, and the 2×2 confusion matrix.' },
+      { path: 'src/frontend/src/api/client.js', desc: 'Adds the training calls: trainLstm (start a run), getRun (poll one), and getRuns (list).' },
+      { path: 'src/frontend/src/components/FilesPanel.jsx · LessonPanel.jsx · Stepper.jsx · App.jsx · main.jsx', desc: 'Shared shell + this files section, the markdown lesson renderer, the stage stepper, the app layout, and the router (see Stage 1).' },
+    ],
+  },
+  {
+    label: 'Lesson content',
+    files: [
+      { path: 'src/frontend/src/content/stage2.what.md', desc: 'The "What we\'re doing" lesson text shown in section 1.' },
+      { path: 'src/frontend/src/content/stage2.why.md', desc: 'The "Why we\'re doing it" lesson text shown in section 2.' },
+      { path: 'src/frontend/src/content/stage2.writeup.md', desc: 'The full deep-dive writeup shown in section 5 (windows, why an LSTM, return features, the time-ordered split, reading the loss/LR/accuracy charts).' },
+    ],
+  },
+]
 
 export default function Stage2Lstm() {
   const [inventory, setInventory] = useState([])
@@ -194,6 +236,13 @@ export default function Stage2Lstm() {
 
       <Section n={5} title="Full Writeup">
         <LessonPanel source={writeupMd} />
+      </Section>
+
+      <Section n={6} title="Files Behind This Stage">
+        <p className="mb-4 text-sm text-slate-400">
+          Every source file involved in this stage, and what each one does.
+        </p>
+        <FilesPanel groups={STAGE_FILES} />
       </Section>
     </div>
   )

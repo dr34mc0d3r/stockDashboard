@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import LessonPanel from '../components/LessonPanel.jsx'
 import PriceChart from '../charts/PriceChart.jsx'
+import FilesPanel from '../components/FilesPanel.jsx'
 import { getInventory, ingest, getBars, deleteBars } from '../api/client.js'
 
 import whatMd from '../content/stage1.what.md?raw'
@@ -8,6 +9,45 @@ import whyMd from '../content/stage1.why.md?raw'
 import writeupMd from '../content/stage1.writeup.md?raw'
 
 const TIMEFRAMES = ['1m', '5m', '1h', '1d']
+
+// The source files behind this stage, with what each one does.
+const STAGE_FILES = [
+  {
+    label: 'Backend — API & ingest',
+    files: [
+      { path: 'src/backend/main.py', desc: 'FastAPI entry point. Builds the app, configures CORS, and on startup runs Base.metadata.create_all to auto-create tables (tolerant of an unreachable DB so the server still boots and stays Ctrl+C-able). Registers the ingest and data routers.' },
+      { path: 'src/backend/config.py', desc: 'Loads secrets from src/.env (Alpaca keys, DB credentials) and assembles the SQLAlchemy DATABASE_URL via URL.create so special characters in the password are escaped. Defines the allowed CORS origins.' },
+      { path: 'src/backend/db.py', desc: 'Creates the SQLAlchemy engine (pool_pre_ping + a 5s connect_timeout so a down DB never hangs startup), the SessionLocal factory, the declarative Base, and the get_session dependency that yields then closes a session per request.' },
+      { path: 'src/backend/models.py', desc: 'ORM table definitions. For this stage: OhlcvBar (composite primary key symbol/timeframe/ts, DECIMAL(18,6) prices) and IngestionRun (one audit row per download with counts and status).' },
+      { path: 'src/backend/schemas.py', desc: 'Pydantic request/response models: IngestRequest (validates dates and uppercases the symbol), IngestResponse, InventoryItem, and BarOut.' },
+      { path: 'src/backend/services/alpaca_client.py', desc: 'Thin REST client for Alpaca market data. Follows the next_page_token cursor in a loop so large multi-page 1-minute pulls download completely instead of silently truncating at ~10k bars.' },
+      { path: 'src/backend/services/ingest_service.py', desc: 'Orchestrates a download: fetches bars, normalizes them, and bulk-UPSERTs into ohlcv_bars (INSERT … ON DUPLICATE KEY UPDATE) so re-downloading an overlapping range is idempotent. Records an IngestionRun summary.' },
+      { path: 'src/backend/routers/ingest.py', desc: 'Defines POST /api/v1/ingest. Validates start < end and delegates to the ingest service, translating Alpaca errors into HTTP error responses.' },
+      { path: 'src/backend/routers/data.py', desc: 'Defines GET /api/v1/inventory (per symbol/timeframe bar counts + date span), GET /api/v1/bars (stored bars for the chart and later slicing), and DELETE /api/v1/bars.' },
+    ],
+  },
+  {
+    label: 'Frontend',
+    files: [
+      { path: 'src/frontend/src/pages/Stage1Data.jsx', desc: 'This page. Renders the 5-part template: the download form, the stored-data inventory table with per-row Chart and Delete actions, and the price chart.' },
+      { path: 'src/frontend/src/api/client.js', desc: 'Fetch wrappers over the backend API. For this stage: getInventory, ingest, getBars, and deleteBars.' },
+      { path: 'src/frontend/src/charts/PriceChart.jsx', desc: 'Renders a TradingView-style candlestick + volume chart with lightweight-charts, including a legend and pan/zoom.' },
+      { path: 'src/frontend/src/components/LessonPanel.jsx', desc: 'Renders the lesson markdown (What / Why / Writeup) using react-markdown + remark-gfm.' },
+      { path: 'src/frontend/src/components/Stepper.jsx', desc: 'The left-nav stage stepper: defines the ordered stage list and which stages are unlocked.' },
+      { path: 'src/frontend/src/components/FilesPanel.jsx', desc: 'Renders this very section — the grouped list of files and their descriptions, reused by every stage.' },
+      { path: 'src/frontend/src/App.jsx', desc: 'App shell: the sidebar (title + stepper) and the routed content outlet.' },
+      { path: 'src/frontend/src/main.jsx', desc: 'React entry point. Sets up the router and maps each /stage/N path to its page.' },
+    ],
+  },
+  {
+    label: 'Lesson content',
+    files: [
+      { path: 'src/frontend/src/content/stage1.what.md', desc: 'The "What we\'re doing" lesson text shown in section 1.' },
+      { path: 'src/frontend/src/content/stage1.why.md', desc: 'The "Why we\'re doing it" lesson text shown in section 2.' },
+      { path: 'src/frontend/src/content/stage1.writeup.md', desc: 'The full deep-dive writeup shown in section 5 (OHLCV, timeframes, pagination, idempotent UPSERT, leakage).' },
+    ],
+  },
+]
 
 export default function Stage1Data() {
   const [form, setForm] = useState({
@@ -236,6 +276,13 @@ export default function Stage1Data() {
 
       <Section n={5} title="Full Writeup">
         <LessonPanel source={writeupMd} />
+      </Section>
+
+      <Section n={6} title="Files Behind This Stage">
+        <p className="mb-4 text-sm text-slate-400">
+          Every source file involved in this stage, and what each one does.
+        </p>
+        <FilesPanel groups={STAGE_FILES} />
       </Section>
     </div>
   )
