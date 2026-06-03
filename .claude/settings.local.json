@@ -23,7 +23,9 @@
       "Bash(.venv/bin/python --version)",
       "Bash(.venv/bin/pip list *)",
       "Bash(uv pip *)",
-      "Bash(PYTHONPATH=src/backend .venv/bin/python *)"
+      "Bash(PYTHONPATH=src/backend .venv/bin/python *)",
+      "Bash(uv venv *)",
+      "Bash(uv sync *)"
     ]
   }
 }
