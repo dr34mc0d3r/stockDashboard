@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import {
   createChart,
+  createSeriesMarkers,
   CandlestickSeries,
   HistogramSeries,
 } from 'lightweight-charts'
@@ -15,7 +16,7 @@ const toEpoch = (ts) => Math.floor(new Date(ts + 'Z').getTime() / 1000)
  * Built so price-scale indicator overlays can be added on the main pane and
  * other indicators in additional panes in later stages.
  */
-export default function PriceChart({ bars, symbol, timeframe }) {
+export default function PriceChart({ bars, symbol, timeframe, markers }) {
   const containerRef = useRef(null)
   const legendRef = useRef(null)
 
@@ -78,6 +79,21 @@ export default function PriceChart({ bars, symbol, timeframe }) {
       /* pane sizing is best-effort */
     }
 
+    // Optional prediction markers (e.g. an LSTM's per-candle direction calls).
+    // Must be time-sorted; the backend returns them oldest-first already.
+    if (markers?.length) {
+      createSeriesMarkers(
+        candles,
+        markers.map((m) => ({
+          time: toEpoch(m.ts),
+          position: m.position,
+          color: m.color,
+          shape: m.shape,
+          text: m.text || '',
+        })),
+      )
+    }
+
     // Legend: live OHLCV under the crosshair, falling back to the last bar.
     const last = bars[bars.length - 1]
     const fmt = (v) => Number(v).toFixed(2)
@@ -98,7 +114,7 @@ export default function PriceChart({ bars, symbol, timeframe }) {
 
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [bars])
+  }, [bars, markers])
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-slate-800">

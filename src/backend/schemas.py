@@ -79,6 +79,22 @@ class TrainLstmRequest(BaseModel):
         return v.strip().upper()
 
 
+class PredictionPoint(BaseModel):
+    ts: datetime
+    prob: float       # model's P(up) for the next bar
+    pred: int         # 1 = predicted up, 0 = predicted down
+    actual: int       # what actually happened (1 up / 0 down)
+
+
+class PredictionsOut(BaseModel):
+    symbol: str
+    timeframe: str
+    seq_len: int
+    horizon: int
+    bars: list[BarOut]
+    predictions: list[PredictionPoint]
+
+
 class TrainingRunOut(BaseModel):
     id: int
     stage: str

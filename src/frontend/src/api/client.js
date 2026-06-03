@@ -52,3 +52,10 @@ export function getRuns(stage) {
   const q = stage ? `?${new URLSearchParams({ stage })}` : ''
   return fetch(`/api/v1/runs${q}`).then((r) => asJson(r, 'runs'))
 }
+
+export function getRunPredictions(id, limit = 200) {
+  const q = new URLSearchParams({ limit })
+  return fetch(`/api/v1/runs/${id}/predictions?${q}`).then((r) =>
+    asJson(r, 'predictions'),
+  )
+}

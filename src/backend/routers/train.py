@@ -5,13 +5,14 @@ worker, and returns immediately. The frontend then polls `GET /runs/{id}` to
 watch `status` and the per-epoch `progress` list update live.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from db import get_session
 from models import OhlcvBar, TrainingRun
-from schemas import TrainingRunOut, TrainLstmRequest
+from schemas import PredictionsOut, TrainingRunOut, TrainLstmRequest
+from services.predict_service import predict_overlay
 from services.training.trainer import start_training
 
 router = APIRouter(prefix="/api/v1", tags=["train"])
@@ -64,3 +65,18 @@ def get_run(run_id: int, session: Session = Depends(get_session)):
     if run is None:
         raise HTTPException(status_code=404, detail=f"No training run {run_id}")
     return run
+
+
+@router.get("/runs/{run_id}/predictions", response_model=PredictionsOut)
+def run_predictions(run_id: int, limit: int = Query(default=200, ge=10, le=1000),
+                    session: Session = Depends(get_session)):
+    """Run the saved model over recent bars for charting its per-candle calls."""
+    run = session.get(TrainingRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"No training run {run_id}")
+    if run.status != "done" or not run.artifact_path:
+        raise HTTPException(status_code=400, detail="Run has no saved model yet.")
+    try:
+        return predict_overlay(session, run, limit=limit)
+    except FileNotFoundError:
+        raise HTTPException(status_code=410, detail="Model artifact is missing on disk.")

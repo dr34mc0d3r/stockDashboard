@@ -4,7 +4,8 @@ import HyperParamForm from '../components/HyperParamForm.jsx'
 import MetricsChart from '../components/MetricsChart.jsx'
 import TrainingProgress from '../components/TrainingProgress.jsx'
 import FilesPanel from '../components/FilesPanel.jsx'
-import { getInventory, trainLstm, getRun } from '../api/client.js'
+import PriceChart from '../charts/PriceChart.jsx'
+import { getInventory, trainLstm, getRun, getRunPredictions } from '../api/client.js'
 
 import whatMd from '../content/stage2.what.md?raw'
 import whyMd from '../content/stage2.why.md?raw'
@@ -73,7 +74,8 @@ const STAGE_FILES = [
       { path: 'src/backend/services/datasets.py', desc: 'Turns raw OHLCV into supervised windows. Derives stationary return features (ln(O/H/L/C / prev_close) + log1p(volume)) so price-level scale never crushes the signal, labels each window from the real close price, splits 70/15/15 by time, and fits the scaler on training rows only (leakage-safe).' },
       { path: 'src/backend/services/training/trainer.py', desc: 'The background training loop, run in a daemon thread so the API stays responsive. Trains with Adam + BCEWithLogitsLoss, a ReduceLROnPlateau scheduler, and early stopping; writes per-epoch metrics (train/val loss, val accuracy, learning rate) to the run row for live polling; then scores the held-out test set and saves the model artifact.' },
       { path: 'src/backend/ml/registry.py', desc: 'Saves/loads a trained model as one self-contained .pt bundle = weights + hyperparams + scaler stats + metrics, under src/backend/artifacts/ (gitignored). Lets a run be reloaded later with identical preprocessing.' },
-      { path: 'src/backend/routers/train.py', desc: 'Defines POST /api/v1/train/lstm (creates a queued TrainingRun and spawns the worker thread), GET /api/v1/runs (list past runs), and GET /api/v1/runs/{id} (poll one run\'s live progress).' },
+      { path: 'src/backend/services/predict_service.py', desc: 'Overlay inference: loads a saved run, runs it over the most recent bars using the exact training pipeline (return features + the saved scaler, no refit), and returns each candle\'s predicted direction + actual outcome for charting.' },
+      { path: 'src/backend/routers/train.py', desc: 'Defines POST /api/v1/train/lstm (creates a queued TrainingRun and spawns the worker), GET /api/v1/runs (list), GET /api/v1/runs/{id} (poll live progress), and GET /api/v1/runs/{id}/predictions (per-candle calls for the overlay chart).' },
     ],
   },
   {
@@ -91,7 +93,8 @@ const STAGE_FILES = [
       { path: 'src/frontend/src/components/HyperParamForm.jsx', desc: 'Reusable numeric hyperparameter grid driven by a field spec — used here for the LSTM params, and by later stages for theirs.' },
       { path: 'src/frontend/src/components/MetricsChart.jsx', desc: 'Reusable inline-SVG charts that update live: Loss (train vs val), Learning rate, and Validation accuracy across epochs.' },
       { path: 'src/frontend/src/components/TrainingProgress.jsx', desc: 'Reusable status panel: status badge, live epoch counter, final test metrics, and the 2×2 confusion matrix.' },
-      { path: 'src/frontend/src/api/client.js', desc: 'Adds the training calls: trainLstm (start a run), getRun (poll one), and getRuns (list).' },
+      { path: 'src/frontend/src/charts/PriceChart.jsx', desc: 'The Stage 1 candlestick + volume chart, reused here with a markers prop to overlay the model\'s per-candle ▲/▼ direction predictions.' },
+      { path: 'src/frontend/src/api/client.js', desc: 'Adds the training calls: trainLstm (start a run), getRun (poll one), getRuns (list), and getRunPredictions (fetch the overlay markers).' },
       { path: 'src/frontend/src/components/FilesPanel.jsx · LessonPanel.jsx · Stepper.jsx · App.jsx · main.jsx', desc: 'Shared shell + this files section, the markdown lesson renderer, the stage stepper, the app layout, and the router (see Stage 1).' },
     ],
   },
@@ -114,6 +117,8 @@ export default function Stage2Lstm() {
   const [run, setRun] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [overlay, setOverlay] = useState(null) // { symbol, timeframe, bars, predictions }
+  const [overlayBusy, setOverlayBusy] = useState(false)
 
   useEffect(() => {
     getInventory()
@@ -136,6 +141,18 @@ export default function Stage2Lstm() {
   const setHpField = (k, v) => setHp((h) => ({ ...h, [k]: v }))
   const applyExample = (ex) => setHp({ ...HP_DEFAULTS, ...ex.params })
 
+  async function loadOverlay() {
+    setOverlayBusy(true)
+    setError('')
+    try {
+      setOverlay(await getRunPredictions(run.id, 200))
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setOverlayBusy(false)
+    }
+  }
+
   async function onTrain(e) {
     e.preventDefault()
     if (!source) return
@@ -143,6 +160,7 @@ export default function Stage2Lstm() {
     setBusy(true)
     setError('')
     setRun(null)
+    setOverlay(null)
     try {
       const started = await trainLstm({
         symbol,
@@ -309,6 +327,59 @@ export default function Stage2Lstm() {
           <div className="space-y-5">
             <TrainingProgress run={run} />
             <MetricsChart progress={run.progress} />
+
+            {run.status === 'done' && (
+              <div className="space-y-3 border-t border-slate-800 pt-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <h4 className="text-sm font-semibold text-slate-200">
+                    Predictions on the chart
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={loadOverlay}
+                    disabled={overlayBusy}
+                    className="rounded-md bg-sky-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-50"
+                  >
+                    {overlayBusy
+                      ? 'Loading…'
+                      : overlay
+                        ? 'Refresh'
+                        : 'Show predictions on candles'}
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    <span className="text-emerald-400">▲ green</span> = predicted up ·{' '}
+                    <span className="text-red-400">▼ red</span> = predicted down · most recent
+                    candles
+                  </span>
+                </div>
+                {overlay && overlay.bars.length > 0 && (
+                  <>
+                    <PriceChart
+                      bars={overlay.bars}
+                      symbol={overlay.symbol}
+                      timeframe={overlay.timeframe}
+                      markers={overlay.predictions.map((p) => ({
+                        ts: p.ts,
+                        position: p.pred === 1 ? 'belowBar' : 'aboveBar',
+                        color: p.pred === 1 ? '#22c55e' : '#ef4444',
+                        shape: p.pred === 1 ? 'arrowUp' : 'arrowDown',
+                      }))}
+                    />
+                    <p className="text-xs text-slate-500">
+                      Each arrow is the model's call at that candle for the next one. Compare the
+                      arrow to the candle that follows — over many candles you'll feel why ~50%
+                      accuracy looks like noise. (Recent bars may overlap training data; this view
+                      is illustrative.)
+                    </p>
+                  </>
+                )}
+                {overlay && overlay.bars.length === 0 && (
+                  <p className="text-sm text-slate-500">
+                    Not enough stored bars for this symbol to build a prediction window.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Section>
