@@ -32,7 +32,7 @@ exclude = [
 [tool.pytest.ini_options]
 # Source lives under src/; make the backend package importable from tests.
 pythonpath = ["src"]
-testpaths = ["src/backend/tests"]
+testpaths = ["src/backend/tests", "srcV1/backend/tests"]
 
 [dependency-groups]
 dev = [

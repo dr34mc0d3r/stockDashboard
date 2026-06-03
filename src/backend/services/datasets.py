@@ -19,8 +19,6 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from models import OhlcvBar
-
 # OHLCV feature order — kept stable so a saved scaler lines up with inference.
 FEATURE_COLS = ("open", "high", "low", "close", "volume")
 CLOSE_IDX = FEATURE_COLS.index("close")
@@ -69,6 +67,8 @@ class Dataset:
 def load_bars(session: Session, symbol: str, timeframe: str,
               start: str | None = None, end: str | None = None) -> np.ndarray:
     """Load OHLCV rows oldest-first as a float64 array, columns = FEATURE_COLS."""
+    from models import OhlcvBar  # local import: keeps the pure logic DB-free
+
     stmt = select(OhlcvBar).where(
         OhlcvBar.symbol == symbol.upper(), OhlcvBar.timeframe == timeframe
     )
