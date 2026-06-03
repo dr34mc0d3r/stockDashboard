@@ -42,6 +42,10 @@ the model peek at tomorrow while learning today, inflating its score dishonestly
 - **Early stopping** watches validation loss and halts after `patience` epochs without
   improvement, then restores the best weights — so the saved model is the best one seen, not
   the last one.
+- **Learning rate:** the optimizer takes steps proportional to this. A scheduler
+  (`ReduceLROnPlateau`) multiplies it by *LR drop factor* whenever validation loss stalls for
+  *LR drop patience* epochs — you'll see the LR chart step down, and the loss often resumes
+  falling afterward as the model takes finer steps near a minimum.
 - **Confusion matrix:** the green diagonal (correct up / correct down) vs. the red off-diagonal
   (misses). A model that just predicts "up" every time shows up as one full column — compare
   its accuracy against the **up-label balance** to know if it actually learned anything.

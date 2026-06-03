@@ -61,6 +61,8 @@ class LstmHyperParams(BaseModel):
     batch: int = Field(default=64, ge=8, le=512)
     epochs: int = Field(default=30, ge=1, le=200)
     patience: int = Field(default=5, ge=1, le=50)
+    lr_factor: float = Field(default=0.5, gt=0, lt=1, description="LR multiplier on plateau")
+    lr_patience: int = Field(default=2, ge=1, le=20, description="epochs before LR drop")
     split: tuple[float, float, float] = (0.7, 0.15, 0.15)
 
 

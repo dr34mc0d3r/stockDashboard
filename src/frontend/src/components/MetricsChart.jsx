@@ -65,6 +65,15 @@ export default function MetricsChart({ progress }) {
   const lossMax = Math.max(...trainLoss, ...valLoss) * 1.05
   const lossMin = Math.min(...trainLoss, ...valLoss) * 0.95
 
+  // Learning rate: only present on runs trained with the LR scheduler.
+  const hasLr = progress.some((p) => p.lr != null)
+  const lr = progress.map((p) => p.lr)
+  const lrHi = Math.max(...lr)
+  const lrLo = Math.min(...lr)
+  // If the LR never dropped it's a flat line — center it; else pad the range.
+  const lrMin = lrHi === lrLo ? 0 : lrLo * 0.9
+  const lrMax = lrHi === lrLo ? lrHi * 2 : lrHi * 1.1
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Plot
@@ -77,6 +86,15 @@ export default function MetricsChart({ progress }) {
           { label: 'val', color: '#f472b6', points: valLoss },
         ]}
       />
+      {hasLr && (
+        <Plot
+          title="Learning rate"
+          yMin={lrMin}
+          yMax={lrMax}
+          formatY={(v) => v.toExponential(1)}
+          series={[{ label: 'lr', color: '#fbbf24', points: lr }]}
+        />
+      )}
       <Plot
         title="Validation accuracy"
         yMin={0}

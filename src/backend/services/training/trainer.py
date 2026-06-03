@@ -84,6 +84,14 @@ def _train(run_id: int, symbol: str, timeframe: str, hp: dict,
 
         epochs = int(hp.get("epochs", 30))
         patience = int(hp.get("patience", 5))
+        # Halve the LR when val loss plateaus (lr_patience < early-stop patience,
+        # so the schedule kicks in before training gives up). Per-epoch LR is
+        # recorded so the UI can chart it live.
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode="min",
+            factor=float(hp.get("lr_factor", 0.5)),
+            patience=int(hp.get("lr_patience", 2)),
+        )
         best_val = float("inf")
         best_state = copy.deepcopy(model.state_dict())
         stale = 0
@@ -107,12 +115,16 @@ def _train(run_id: int, symbol: str, timeframe: str, hp: dict,
                 "train_loss": round(train_loss, 5),
                 "val_loss": round(val_loss, 5),
                 "val_acc": round(val_acc, 5),
+                # LR used during this epoch (capture before the scheduler steps).
+                "lr": optimizer.param_groups[0]["lr"],
             })
             # Persist progress so the UI can poll mid-training. Assign a *new*
             # list each epoch — SQLAlchemy won't flag an in-place mutation of the
             # same JSON list object as dirty, so it would otherwise never update.
             run.progress = [*progress]
             session.commit()
+
+            scheduler.step(val_loss)  # may reduce the LR for the next epoch
 
             if val_loss < best_val - 1e-4:
                 best_val, best_state, stale = val_loss, copy.deepcopy(model.state_dict()), 0
