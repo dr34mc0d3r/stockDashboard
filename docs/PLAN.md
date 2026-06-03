@@ -4,7 +4,7 @@ A living build plan for the staged forecasting pipeline. Update the status marke
 progresses. Companion docs: design outline in [`src/README.md`](../src/README.md), reference
 docs in [`documentation.md`](./documentation.md).
 
-**Last updated:** 2026-06-02
+**Last updated:** 2026-06-03
 
 ## Status Legend
 - ✅ **done** — built and verified
@@ -41,7 +41,7 @@ docs in [`documentation.md`](./documentation.md).
 | **Model registry** (save/load `.pt` + config + scaler) | 🔲 | `ml/registry.py` |
 | **Background training jobs + progress streaming** (WS or polling) | 🔲 | so UI stays responsive during training |
 | **Dataset builder** (windowing, time-ordered splits, scaling) | 🔲 | `services/datasets.py`; guard against leakage |
-| **PyTorch installed** | ⚠ | confirm wheels exist for Python 3.14; else use a separate 3.11/3.12 venv for ML stages |
+| **PyTorch installable** | ✅ | project pinned to **Python 3.11** (`.python-version`, `requires-python>=3.11,<3.13`); `torch==2.2.2` resolves with an Intel-Mac wheel (last x86_64 build). Not yet added to deps — added at Stage 2 start. |
 | **Indicator module** (the 10 indicators, params, toggles) | 🔲 | `services/features/indicators.py`; reuse srcV1 logic |
 | **MetricsChart / TrainingProgress / HyperParamForm components** | 🔲 | reusable across stages |
 
@@ -173,8 +173,10 @@ MACD(12/26/9), Stochastic(14,3,3), ATR(14), ADX(14), OBV — *own pane*.
 ---
 
 ## Known Risks / Open Items
-- ⚠ **PyTorch on Python 3.14** — verify wheels before Stage 2; fallback = dedicated
-  3.11/3.12 venv for ML, or CPU index wheels.
+- ✅ **PyTorch / Python version** — RESOLVED 2026-06-03. Root cause was Intel macOS, not
+  Python: PyTorch dropped x86_64 macOS wheels after `2.2.2` (cp38–cp312). Project pinned to
+  Python 3.11 so `torch==2.2.2` installs from a prebuilt wheel. Capped at torch 2.2.2 on this
+  machine — fine for the small CPU models.
 - ⚠ **Stage 4 news source** — choose Finnhub / Alpaca / yfinance.
 - 1-minute data volume grows fast; rely on slice-selection + caching to stay CPU-sized.
 - Remote DB host is modest hardware; keep queries indexed by the composite PK.
