@@ -33,3 +33,22 @@ export function deleteBars(symbol, timeframe) {
     asJson(r, 'delete'),
   )
 }
+
+// --- Stage 2: training ---
+
+export function trainLstm(body) {
+  return fetch('/api/v1/train/lstm', {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(body),
+  }).then((r) => asJson(r, 'train'))
+}
+
+export function getRun(id) {
+  return fetch(`/api/v1/runs/${id}`).then((r) => asJson(r, 'run'))
+}
+
+export function getRuns(stage) {
+  const q = stage ? `?${new URLSearchParams({ stage })}` : ''
+  return fetch(`/api/v1/runs${q}`).then((r) => asJson(r, 'runs'))
+}

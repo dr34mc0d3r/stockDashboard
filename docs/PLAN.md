@@ -43,7 +43,7 @@ docs in [`documentation.md`](./documentation.md).
 | **Dataset builder** (windowing, time-ordered splits, scaling) | ✅ | `services/datasets.py`; per-segment windowing + train-only scaler (leakage-safe) |
 | **PyTorch installed** | ✅ | `torch==2.2.2` (last Intel-Mac wheel) on Python 3.11; **pinned `numpy<2`** (1.26.4) — torch 2.2.2 can't run against NumPy 2.x |
 | **Indicator module** (the 10 indicators, params, toggles) | 🔲 | `services/features/indicators.py`; reuse srcV1 logic |
-| **MetricsChart / TrainingProgress / HyperParamForm components** | 🔲 | reusable across stages — **next up** (Stage 2 frontend) |
+| **MetricsChart / TrainingProgress / HyperParamForm components** | ✅ | `frontend/src/components/`; reusable across stages |
 
 ---
 
@@ -66,21 +66,27 @@ progress indicator for very large 1-min pulls; resample endpoint (1m → 5m/1h) 
 
 ---
 
-## Stage 2 — LSTM Direction Model 🔲 PLANNED
+## Stage 2 — LSTM Direction Model ✅ DONE
 
 **Goal:** train a small LSTM on OHLCV sequences to predict next-bar direction (up/down).
 
-**To build:**
-- Confirm/installation of PyTorch (see ⚠ above).
-- `services/datasets.py`: windowing (`seq_len`), time-ordered train/val/test split, feature
-  scaling fit on train only (no leakage).
-- `ml/models/lstm.py`: LSTM classifier.
-- `services/training/`: train loop with early stopping; emit per-epoch loss/metrics.
-- `training_runs` table + model registry (`ml/registry.py`).
-- Router `train.py`: `POST /api/v1/train/lstm`, `GET /api/v1/runs`, progress stream.
-- Frontend `pages/Stage2Lstm.jsx`: HyperParamForm + MetricsChart (loss curve, accuracy,
-  confusion matrix) + data-source selector (from inventory).
-- Lesson markdown.
+**Built & verified (end-to-end against the live DB):**
+- `services/datasets.py`: per-segment windowing (`seq_len`), time-ordered 70/15/15 split,
+  scaler fit on train rows only (leakage-safe).
+- `ml/models/lstm.py`: LSTM classifier (single logit → BCEWithLogitsLoss).
+- `services/training/trainer.py`: threaded train loop, early stopping, per-epoch metrics
+  written to the run row for polling. (Note: JSON `progress` must be reassigned a new list
+  each epoch — SQLAlchemy ignores in-place list mutation.)
+- `models.py` `TrainingRun` + `ml/registry.py` (`.pt` = weights + hyperparams + scaler).
+- `routers/train.py`: `POST /api/v1/train/lstm`, `GET /api/v1/runs`, `GET /api/v1/runs/{id}`.
+- Frontend `pages/Stage2Lstm.jsx` (5-part template) + reusable `HyperParamForm` /
+  `MetricsChart` (SVG loss + accuracy curves) / `TrainingProgress` (confusion matrix);
+  inventory-backed data-source selector + optional date slice; polls the run live.
+- Lesson markdown: `content/stage2.{what,why,writeup}.md`.
+
+**Verified:** trained AAPL 1m against MariaDB — runs complete, progress persists per-epoch,
+metrics + confusion matrix + saved artifact all correct. (Accuracy ~50%, the honest baseline
+for next-bar direction on raw OHLCV — by design; Stage 3 adds indicator features.)
 
 **Default hyperparameters:** seq_len=60, horizon=1, features=OHLCV, target=direction,
 hidden=64, layers=2, dropout=0.2, lr=1e-3, batch=64, epochs=30, optimizer=Adam,

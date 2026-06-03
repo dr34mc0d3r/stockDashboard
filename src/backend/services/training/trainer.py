@@ -108,8 +108,10 @@ def _train(run_id: int, symbol: str, timeframe: str, hp: dict,
                 "val_loss": round(val_loss, 5),
                 "val_acc": round(val_acc, 5),
             })
-            # Persist progress so the UI can poll mid-training.
-            run.progress = progress
+            # Persist progress so the UI can poll mid-training. Assign a *new*
+            # list each epoch — SQLAlchemy won't flag an in-place mutation of the
+            # same JSON list object as dirty, so it would otherwise never update.
+            run.progress = [*progress]
             session.commit()
 
             if val_loss < best_val - 1e-4:

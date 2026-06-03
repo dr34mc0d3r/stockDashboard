@@ -4,7 +4,7 @@ import { NavLink } from 'react-router-dom'
 // build them.
 export const STAGES = [
   { n: 1, title: 'Data Acquisition', path: '/stage/1', ready: true },
-  { n: 2, title: 'LSTM Direction', ready: false },
+  { n: 2, title: 'LSTM Direction', path: '/stage/2', ready: true },
   { n: 3, title: 'Multi-Task Model', ready: false },
   { n: 4, title: 'FinBERT Sentiment', ready: false },
   { n: 5, title: 'GDELT News', ready: false },
