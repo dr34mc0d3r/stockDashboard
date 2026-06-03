@@ -13,12 +13,22 @@ an internal memory at each step through learned "gates" that decide what to keep
 forget. We take the memory after the final bar, pass it through one linear layer to a single
 number (a **logit**), and interpret `sigmoid(logit)` as the probability of "up".
 
+### Features are returns, not price levels
+A tempting mistake is to feed the model raw prices. A year of one stock trends over a wide
+range, so the price's *standard deviation is large* — and when we standardize by it, the
+bar-to-bar changes (exactly where direction signal lives) get crushed toward zero. The model
+then sees a smooth ramp with no usable detail and can only output ~0.5 for everything, so the
+loss sits pinned at `ln(2) ≈ 0.693` and the curves stay flat. Instead we feed **returns**:
+`ln(open/prev_close)`, `ln(high/prev_close)`, `ln(low/prev_close)`, `ln(close/prev_close)`,
+and `log1p(volume)`. Returns are *stationary and scale-free*, so the signal survives. The
+**labels are still taken from the real close price** (`close[t+h] > close[t]`).
+
 ### Scaling — and fitting it on train only
-Raw prices and volume live on wildly different scales (a $400 close next to 2,000,000 shares),
-which makes optimization unstable. We **standardize** each feature to roughly mean 0,
-variance 1. Crucially, the mean and standard deviation are computed on the **training rows
-only**, then applied to validation and test. Computing them over the whole dataset would let
-test-set statistics seep into training — a subtle but real **leakage**.
+Even returns vary in spread (volume dwarfs a 0.001 log-return), which makes optimization
+unstable, so we **standardize** each feature to roughly mean 0, variance 1. Crucially, the
+mean and standard deviation are computed on the **training rows only**, then applied to
+validation and test. Computing them over the whole dataset would let test-set statistics
+seep into training — a subtle but real **leakage**.
 
 ### The time-ordered split
 We never shuffle. The oldest 70% of bars is training, the next 15% validation, the final 15%

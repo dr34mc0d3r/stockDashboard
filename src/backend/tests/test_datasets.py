@@ -33,41 +33,46 @@ def _ramp(n, start=100.0, step=1.0, vol=1000):
     ).astype("float64")
 
 
-# --- the core leakage guard: scaler fit on TRAIN rows only ---
+# --- the core leakage guard: scaler fit on TRAIN feature rows only ---
 
-def test_scaler_uses_train_rows_only_not_whole_series():
-    # Train region sits near 100; val/test region is shifted ~10x higher.
-    # If the scaler peeked at val/test, its mean/std would be far larger.
-    n = 300
-    close = np.empty(n)
-    close[:210] = 100.0 + np.arange(210) * 0.1          # train ~ [100, 121)
-    close[210:] = 1000.0 + np.arange(n - 210) * 0.1     # val+test ~ 1000
+def test_scaler_uses_train_feature_rows_only_not_whole_series():
+    # Features are returns. Train region = low volatility; val/test = high
+    # volatility. If the scaler peeked at val/test, its return std would balloon.
+    rng = np.random.default_rng(0)
+    n = 400
+    rets = np.empty(n)
+    rets[:280] = rng.normal(0, 0.001, 280)        # train: low-vol returns
+    rets[280:] = rng.normal(0, 0.05, n - 280)     # val+test: high-vol returns
+    close = 100.0 * np.exp(np.cumsum(rets))
     raw = np.column_stack([close, close, close, close, np.full(n, 1000.0)]).astype("float64")
 
     ds = build_dataset(raw, seq_len=20, horizon=1, split=(0.7, 0.15, 0.15))
 
-    i_train = int(n * 0.7)  # 210
-    expected_mean = raw[:i_train].mean(axis=0)
-    expected_std = raw[:i_train].std(axis=0)
-    expected_std[expected_std == 0] = 1.0  # mirror the builder's div-by-zero guard
+    feats, _ = datasets._return_features(raw)      # the actual model features
+    m = len(feats)                                  # n - 1
+    i_train = int(m * 0.7)
+    expected_mean = feats[:i_train].mean(axis=0)
+    expected_std = feats[:i_train].std(axis=0)
+    expected_std[expected_std < 1e-8] = 1.0         # mirror the near-zero guard
 
     np.testing.assert_allclose(ds.scaler.mean, expected_mean)
     np.testing.assert_allclose(ds.scaler.std, expected_std)
 
-    # And crucially NOT the whole-series stats (that would be leakage).
-    whole_mean = raw.mean(axis=0)
-    assert ds.scaler.mean[3] < 200          # train close mean stays ~110
-    assert whole_mean[3] > 300              # whole-series mean is dragged up
-    assert not np.allclose(ds.scaler.mean, whole_mean)
+    # And crucially NOT the whole-series stats (that would be leakage): the
+    # close-return std fit on train must be far below the whole-series std.
+    whole_std = feats.std(axis=0)
+    assert ds.scaler.std[3] < whole_std[3] * 0.5
 
 
-def test_scaler_standardizes_train_to_zero_mean_unit_std():
+def test_scaler_standardizes_train_features_to_zero_mean_unit_std():
     raw = _ramp(400)
     ds = build_dataset(raw, seq_len=20, horizon=1)
-    scaled_train = ds.scaler.transform(raw[: int(400 * 0.7)])
+    feats, _ = datasets._return_features(raw)
+    i_train = int(len(feats) * 0.7)
+    scaled_train = ds.scaler.transform(feats[:i_train])
     np.testing.assert_allclose(scaled_train.mean(axis=0), 0, atol=1e-9)
-    # volume column is constant -> std forced to 1, so it stays 0 after centering
-    np.testing.assert_allclose(scaled_train[:, :4].std(axis=0), 1, atol=1e-9)
+    # O/H/L/C return columns vary -> unit std; volume is constant -> guarded to 0.
+    np.testing.assert_allclose(scaled_train[:, :4].std(axis=0), 1, atol=1e-6)
 
 
 # --- time-ordered, per-segment windowing (no cross-boundary leakage) ---
@@ -76,9 +81,10 @@ def test_windows_are_built_within_each_segment():
     n, seq_len, horizon = 500, 60, 1
     ds = build_dataset(raw=_ramp(n), seq_len=seq_len, horizon=horizon, split=(0.7, 0.15, 0.15))
 
-    i_train = int(n * 0.7)
-    i_val = int(n * 0.85)
-    seg_lens = {"train": i_train, "val": i_val - i_train, "test": n - i_val}
+    m = n - 1  # the return diff drops the first bar
+    i_train = int(m * 0.7)
+    i_val = int(m * 0.85)
+    seg_lens = {"train": i_train, "val": i_val - i_train, "test": m - i_val}
 
     def expected(seg_len):
         return max(0, seg_len - seq_len - horizon + 1)
@@ -89,9 +95,19 @@ def test_windows_are_built_within_each_segment():
 
     # Per-segment count is strictly fewer than naive whole-series windowing,
     # because each split boundary drops (seq_len + horizon - 1) windows.
-    naive = expected(n)
+    naive = expected(m)
     total = ds.X_train.shape[0] + ds.X_val.shape[0] + ds.X_test.shape[0]
     assert total < naive
+
+
+def test_build_dataset_labels_track_real_price_after_returns_refactor():
+    # Features are returns, but labels must stay anchored to the *raw price*:
+    # a strictly rising series is all "up", a strictly falling one all "down".
+    up = build_dataset(_ramp(300), seq_len=20, horizon=1)
+    assert (up.y_train == 1).all() and (up.y_val == 1).all() and (up.y_test == 1).all()
+
+    down = build_dataset(_ramp(300)[::-1].copy(), seq_len=20, horizon=1)
+    assert (down.y_train == 0).all() and (down.y_val == 0).all() and (down.y_test == 0).all()
 
 
 def test_window_shapes_and_feature_count():
