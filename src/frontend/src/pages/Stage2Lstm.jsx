@@ -8,6 +8,7 @@ import { getInventory, trainLstm, getRun } from '../api/client.js'
 
 import whatMd from '../content/stage2.what.md?raw'
 import whyMd from '../content/stage2.why.md?raw'
+import understandMd from '../content/stage2.understand.md?raw'
 import writeupMd from '../content/stage2.writeup.md?raw'
 
 // Matches the backend LstmHyperParams defaults (and PLAN.md).
@@ -99,7 +100,8 @@ const STAGE_FILES = [
     files: [
       { path: 'src/frontend/src/content/stage2.what.md', desc: 'The "What we\'re doing" lesson text shown in section 1.' },
       { path: 'src/frontend/src/content/stage2.why.md', desc: 'The "Why we\'re doing it" lesson text shown in section 2.' },
-      { path: 'src/frontend/src/content/stage2.writeup.md', desc: 'The full deep-dive writeup shown in section 6 (windows, why an LSTM, return features, the time-ordered split, reading the loss/LR/accuracy charts).' },
+      { path: 'src/frontend/src/content/stage2.understand.md', desc: 'The "What am I to see and learn" lesson shown in section 6 — maps the loss/accuracy/confusion outputs back to reading a candlestick chart.' },
+      { path: 'src/frontend/src/content/stage2.writeup.md', desc: 'The full deep-dive writeup shown in section 7 (windows, why an LSTM, return features, the time-ordered split, reading the loss/LR/accuracy charts).' },
     ],
   },
 ]
@@ -311,11 +313,15 @@ export default function Stage2Lstm() {
         )}
       </Section>
 
-      <Section n={6} title="Full Writeup">
+      <Section n={6} title="What Am I to See and Learn">
+        <LessonPanel source={understandMd} />
+      </Section>
+
+      <Section n={7} title="Full Writeup">
         <LessonPanel source={writeupMd} />
       </Section>
 
-      <Section n={7} title="Files Behind This Stage">
+      <Section n={8} title="Files Behind This Stage">
         <p className="mb-4 text-sm text-slate-400">
           Every source file involved in this stage, and what each one does.
         </p>
