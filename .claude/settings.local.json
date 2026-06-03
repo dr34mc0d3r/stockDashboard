@@ -25,7 +25,10 @@
       "Bash(uv pip *)",
       "Bash(PYTHONPATH=src/backend .venv/bin/python *)",
       "Bash(uv venv *)",
-      "Bash(uv sync *)"
+      "Bash(uv sync *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
