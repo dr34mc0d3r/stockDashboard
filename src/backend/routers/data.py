@@ -1,31 +1,21 @@
-"""Stage 1 data endpoints: stored-data inventory."""
+"""Stage 1 data endpoints: stored-data inventory, bar fetch, bar delete.
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+Thin HTTP layer: normalize inputs, call services/bar_service.py, shape the
+response models.
+"""
 
-from db import get_session
-from models import OhlcvBar
-from schemas import BarOut, InventoryItem
+from fastapi import APIRouter, Query
+
+from db import SessionDep
+from schemas import BarOut, InventoryItem, normalize_symbol
+from services import bar_service
 
 router = APIRouter(prefix="/api/v1", tags=["data"])
 
 
 @router.get("/inventory", response_model=list[InventoryItem])
-def inventory(session: Session = Depends(get_session)):
+def inventory(session: SessionDep) -> list[InventoryItem]:
     """What's already stored, per (symbol, timeframe)."""
-    rows = session.execute(
-        select(
-            OhlcvBar.symbol,
-            OhlcvBar.timeframe,
-            func.count().label("bar_count"),
-            func.min(OhlcvBar.ts).label("earliest"),
-            func.max(OhlcvBar.ts).label("latest"),
-        )
-        .group_by(OhlcvBar.symbol, OhlcvBar.timeframe)
-        .order_by(OhlcvBar.symbol, OhlcvBar.timeframe)
-    ).all()
     return [
         InventoryItem(
             symbol=r.symbol,
@@ -34,32 +24,24 @@ def inventory(session: Session = Depends(get_session)):
             earliest=r.earliest,
             latest=r.latest,
         )
-        for r in rows
+        for r in bar_service.inventory_rows(session)
     ]
 
 
 @router.get("/bars", response_model=list[BarOut])
 def bars(
     symbol: str,
+    session: SessionDep,
     timeframe: str = "1m",
     start: str | None = None,
     end: str | None = None,
     limit: int = Query(default=5000, le=50000),
-    session: Session = Depends(get_session),
-):
+) -> list[BarOut]:
     """Return stored bars for a symbol/timeframe, oldest first.
 
     Used by the chart and (later) by Lab stages selecting a data slice.
     """
-    stmt = select(OhlcvBar).where(
-        OhlcvBar.symbol == symbol.upper(), OhlcvBar.timeframe == timeframe
-    )
-    if start:
-        stmt = stmt.where(OhlcvBar.ts >= start)
-    if end:
-        stmt = stmt.where(OhlcvBar.ts <= end)
-    stmt = stmt.order_by(OhlcvBar.ts.asc()).limit(limit)
-    rows = session.execute(stmt).scalars().all()
+    rows = bar_service.query_bars(session, normalize_symbol(symbol), timeframe, start, end, limit)
     return [
         BarOut(
             ts=b.ts,
@@ -74,16 +56,8 @@ def bars(
 
 
 @router.delete("/bars")
-def delete_bars(
-    symbol: str,
-    timeframe: str,
-    session: Session = Depends(get_session),
-):
+def delete_bars(symbol: str, timeframe: str, session: SessionDep) -> dict:
     """Delete all stored bars for a (symbol, timeframe). Returns rows removed."""
-    result = session.execute(
-        sa_delete(OhlcvBar).where(
-            OhlcvBar.symbol == symbol.upper(), OhlcvBar.timeframe == timeframe
-        )
-    )
-    session.commit()
-    return {"symbol": symbol.upper(), "timeframe": timeframe, "deleted": result.rowcount}
+    canonical = normalize_symbol(symbol)
+    deleted = bar_service.delete_bars(session, canonical, timeframe)
+    return {"symbol": canonical, "timeframe": timeframe, "deleted": deleted}

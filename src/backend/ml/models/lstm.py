@@ -13,8 +13,7 @@ from torch import nn
 
 
 class LSTMClassifier(nn.Module):
-    def __init__(self, n_features: int, hidden: int = 64, layers: int = 2,
-                 dropout: float = 0.2):
+    def __init__(self, n_features: int, hidden: int = 64, layers: int = 2, dropout: float = 0.2):
         super().__init__()
         self.lstm = nn.LSTM(
             input_size=n_features,

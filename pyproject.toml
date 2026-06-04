@@ -30,11 +30,27 @@ exclude = [
 ]
 
 [tool.pytest.ini_options]
-# Source lives under src/; make the backend package importable from tests.
-pythonpath = ["src"]
-testpaths = ["src/backend/tests", "srcV1/backend/tests"]
+# Source lives under src/; src/backend on the path lets tests import the app
+# the same way uvicorn runs it (bare `from main import app`).
+pythonpath = ["src", "src/backend"]
+testpaths = ["src/backend/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src/backend"]
+# Only the active codebase — srcV1/ and docs/ are legacy/reference snippets.
+include = ["src/backend/**/*.py"]
+
+[tool.ruff.lint]
+# Beginner-friendly, high-value rule families only:
+# E/W pycodestyle, F pyflakes, I import sorting, UP modern syntax, B common bugs.
+select = ["E", "W", "F", "I", "UP", "B"]
+ignore = ["E501"]  # long lines: the formatter handles wrapping; don't double-flag
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pytest>=9.0.3",
+    "ruff>=0.6",
 ]

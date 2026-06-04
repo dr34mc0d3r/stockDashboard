@@ -14,6 +14,7 @@ import torch
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from constants import PROB_THRESHOLD
 from ml import registry
 from ml.models.lstm import build_model
 from models import OhlcvBar, TrainingRun
@@ -43,9 +44,13 @@ def predict_overlay(session: Session, run: TrainingRun, limit: int = 200) -> dic
         base = base.where(OhlcvBar.ts >= run.start, OhlcvBar.ts <= run.end)
         # Clamp to the test region so we never spill into val/train data.
         count = session.execute(
-            select(func.count()).select_from(OhlcvBar).where(
-                OhlcvBar.symbol == run.symbol, OhlcvBar.timeframe == run.timeframe,
-                OhlcvBar.ts >= run.start, OhlcvBar.ts <= run.end,
+            select(func.count())
+            .select_from(OhlcvBar)
+            .where(
+                OhlcvBar.symbol == run.symbol,
+                OhlcvBar.timeframe == run.timeframe,
+                OhlcvBar.ts >= run.start,
+                OhlcvBar.ts <= run.end,
             )
         ).scalar_one()
         split = hp.get("split", [0.7, 0.15, 0.15])
@@ -53,25 +58,31 @@ def predict_overlay(session: Session, run: TrainingRun, limit: int = 200) -> dic
         test_capacity = max(0, (count - i_val) - seq_len - horizon)
         eff_limit = min(limit, test_capacity)
 
-    empty = {"symbol": run.symbol, "timeframe": run.timeframe, "seq_len": seq_len,
-             "horizon": horizon, "out_of_sample": out_of_sample,
-             "bars": [], "predictions": []}
+    empty = {
+        "symbol": run.symbol,
+        "timeframe": run.timeframe,
+        "seq_len": seq_len,
+        "horizon": horizon,
+        "out_of_sample": out_of_sample,
+        "bars": [],
+        "predictions": [],
+    }
     if eff_limit <= 0:
         return empty
 
     # Pull the most-recent (eff_limit + window + horizon) bars, re-sort ascending.
     need = eff_limit + seq_len + horizon + 1
-    rows = session.execute(
-        base.order_by(OhlcvBar.ts.desc()).limit(need)
-    ).scalars().all()
+    rows = session.execute(base.order_by(OhlcvBar.ts.desc()).limit(need)).scalars().all()
     rows = list(reversed(rows))
     if len(rows) < seq_len + horizon + 2:
         return empty
 
     ts = [r.ts for r in rows]
     raw = np.array(
-        [[float(r.open), float(r.high), float(r.low), float(r.close), float(r.volume)]
-         for r in rows],
+        [
+            [float(r.open), float(r.high), float(r.low), float(r.close), float(r.volume)]
+            for r in rows
+        ],
         dtype=np.float64,
     )
 
@@ -94,17 +105,29 @@ def predict_overlay(session: Session, run: TrainingRun, limit: int = 200) -> dic
         {
             "ts": ts[i + seq_len],
             "prob": round(float(probs[i]), 4),
-            "pred": int(probs[i] >= 0.5),
+            "pred": int(probs[i] >= PROB_THRESHOLD),
             "actual": int(y[i]),
         }
         for i in range(len(X))
     ][-eff_limit:]
 
     bars = [
-        {"ts": r.ts, "open": float(r.open), "high": float(r.high),
-         "low": float(r.low), "close": float(r.close), "volume": int(r.volume)}
+        {
+            "ts": r.ts,
+            "open": float(r.open),
+            "high": float(r.high),
+            "low": float(r.low),
+            "close": float(r.close),
+            "volume": int(r.volume),
+        }
         for r in rows
     ]
-    return {"symbol": run.symbol, "timeframe": run.timeframe,
-            "seq_len": seq_len, "horizon": horizon, "out_of_sample": out_of_sample,
-            "bars": bars, "predictions": predictions}
+    return {
+        "symbol": run.symbol,
+        "timeframe": run.timeframe,
+        "seq_len": seq_len,
+        "horizon": horizon,
+        "out_of_sample": out_of_sample,
+        "bars": bars,
+        "predictions": predictions,
+    }

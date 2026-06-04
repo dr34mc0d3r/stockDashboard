@@ -6,14 +6,12 @@ const W = 460
 const H = 180
 const PAD = { top: 12, right: 12, bottom: 24, left: 40 }
 
-function Plot({ title, series, yMin, yMax, formatY = (v) => v.toFixed(2) }) {
+function Plot({ title, series, yMin, yMax, formatY = (v) => v.toFixed(2), refLine }) {
   const epochs = series[0]?.points.length ?? 0
   const innerW = W - PAD.left - PAD.right
   const innerH = H - PAD.top - PAD.bottom
-  const xAt = (i) =>
-    PAD.left + (epochs <= 1 ? innerW / 2 : (i / (epochs - 1)) * innerW)
-  const yAt = (v) =>
-    PAD.top + innerH - ((v - yMin) / (yMax - yMin || 1)) * innerH
+  const xAt = (i) => PAD.left + (epochs <= 1 ? innerW / 2 : (i / (epochs - 1)) * innerW)
+  const yAt = (v) => PAD.top + innerH - ((v - yMin) / (yMax - yMin || 1)) * innerH
 
   const ticks = [yMin, (yMin + yMax) / 2, yMax]
 
@@ -34,11 +32,39 @@ function Plot({ title, series, yMin, yMax, formatY = (v) => v.toFixed(2) }) {
         {ticks.map((t, i) => (
           <g key={i}>
             <line x1={PAD.left} y1={yAt(t)} x2={W - PAD.right} y2={yAt(t)} stroke="#1e293b" />
-            <text x={PAD.left - 6} y={yAt(t) + 3} textAnchor="end" className="fill-slate-600" fontSize="9">
+            <text
+              x={PAD.left - 6}
+              y={yAt(t) + 3}
+              textAnchor="end"
+              className="fill-slate-600"
+              fontSize="9"
+            >
               {formatY(t)}
             </text>
           </g>
         ))}
+        {refLine && (
+          <g>
+            <line
+              x1={PAD.left}
+              y1={yAt(refLine.value)}
+              x2={W - PAD.right}
+              y2={yAt(refLine.value)}
+              stroke="#94a3b8"
+              strokeWidth="1"
+              strokeDasharray="4 3"
+            />
+            <text
+              x={W - PAD.right - 2}
+              y={yAt(refLine.value) - 4}
+              textAnchor="end"
+              className="fill-slate-400"
+              fontSize="9"
+            >
+              {refLine.label}
+            </text>
+          </g>
+        )}
         {series.map((s) => (
           <polyline
             key={s.label}
@@ -48,7 +74,7 @@ function Plot({ title, series, yMin, yMax, formatY = (v) => v.toFixed(2) }) {
             points={s.points.map((p, i) => `${xAt(i)},${yAt(p)}`).join(' ')}
           />
         ))}
-        <text x={(W) / 2} y={H - 4} textAnchor="middle" className="fill-slate-600" fontSize="9">
+        <text x={W / 2} y={H - 4} textAnchor="middle" className="fill-slate-600" fontSize="9">
           epoch →
         </text>
       </svg>
@@ -56,7 +82,10 @@ function Plot({ title, series, yMin, yMax, formatY = (v) => v.toFixed(2) }) {
   )
 }
 
-export default function MetricsChart({ progress }) {
+// `accBaseline` (optional, 0..1): the majority-class rate of the validation
+// split — drawn as a dashed line on the accuracy plot so "above the line"
+// vs "noise" is visible at a glance. Known once the run finishes.
+export default function MetricsChart({ progress, accBaseline }) {
   if (!progress?.length) return null
   const trainLoss = progress.map((p) => p.train_loss)
   const valLoss = progress.map((p) => p.val_loss)
@@ -101,6 +130,11 @@ export default function MetricsChart({ progress }) {
         yMax={1}
         formatY={(v) => `${(v * 100).toFixed(0)}%`}
         series={[{ label: 'val_acc', color: '#34d399', points: valAcc }]}
+        refLine={
+          accBaseline != null
+            ? { value: accBaseline, label: `baseline ${(accBaseline * 100).toFixed(1)}%` }
+            : undefined
+        }
       />
     </div>
   )

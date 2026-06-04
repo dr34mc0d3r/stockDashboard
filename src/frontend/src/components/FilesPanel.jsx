@@ -13,10 +13,7 @@ export default function FilesPanel({ groups }) {
           </h4>
           <ul className="space-y-2">
             {g.files.map((f) => (
-              <li
-                key={f.path}
-                className="rounded-lg border border-slate-800 bg-slate-950/40 p-3"
-              >
+              <li key={f.path} className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
                 <code className="break-all text-sm text-sky-300">{f.path}</code>
                 <p className="mt-1 text-sm leading-relaxed text-slate-400">{f.desc}</p>
               </li>

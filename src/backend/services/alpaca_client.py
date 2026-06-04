@@ -56,7 +56,8 @@ def fetch_bars(symbol: str, timeframe: str, start: str, end: str) -> list[dict]:
     if timeframe not in TIMEFRAME_MAP:
         raise AlpacaError(f"Invalid timeframe '{timeframe}'.", status_code=400)
 
-    sym = symbol.upper()
+    # Symbols arrive canonical (schemas.normalize_symbol runs at the API edge).
+    sym = symbol
     headers = {
         "accept": "application/json",
         "APCA-API-KEY-ID": ALPACA_API_KEY,
@@ -87,9 +88,9 @@ def fetch_bars(symbol: str, timeframe: str, start: str, end: str) -> list[dict]:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8") if e.fp else str(e)
-            raise AlpacaError(f"Alpaca request failed ({e.code}): {body}", status_code=502)
+            raise AlpacaError(f"Alpaca request failed ({e.code}): {body}", status_code=502) from e
         except urllib.error.URLError as e:
-            raise AlpacaError(f"Could not reach Alpaca: {e.reason}", status_code=502)
+            raise AlpacaError(f"Could not reach Alpaca: {e.reason}", status_code=502) from e
 
         for bar in payload.get("bars", {}).get(sym, []):
             bars.append(

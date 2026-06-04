@@ -33,6 +33,11 @@ FEATURE_COLS = ("open", "high", "low", "close", "volume")
 CLOSE_IDX = FEATURE_COLS.index("close")
 N_FEATURES = 5  # ln-returns of O/H/L/C vs prev close + log1p(volume)
 
+# Std floor for the scaler. Kept local (not in constants.py) on purpose:
+# tests/test_datasets.py loads this module standalone by file path, so it must
+# not import sibling backend modules.
+_STD_EPS = 1e-8
+
 
 def _return_features(raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Convert raw OHLCV levels into stationary per-bar return features.
@@ -43,16 +48,18 @@ def _return_features(raw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     real price. Both have length ``len(raw) - 1``.
     """
     closes = raw[:, CLOSE_IDX]
-    prev_close = closes[:-1]                     # denominators for bars 1..n-1
-    o, h, l, c = raw[1:, 0], raw[1:, 1], raw[1:, 2], raw[1:, 3]
+    prev_close = closes[:-1]  # denominators for bars 1..n-1
+    o, h, low, c = raw[1:, 0], raw[1:, 1], raw[1:, 2], raw[1:, 3]
     v = raw[1:, 4]
-    feats = np.column_stack([
-        np.log(o / prev_close),
-        np.log(h / prev_close),
-        np.log(l / prev_close),
-        np.log(c / prev_close),  # the bar's return — the headline feature
-        np.log1p(v),
-    ])
+    feats = np.column_stack(
+        [
+            np.log(o / prev_close),
+            np.log(h / prev_close),
+            np.log(low / prev_close),
+            np.log(c / prev_close),  # the bar's return — the headline feature
+            np.log1p(v),
+        ]
+    )
     return feats, closes[1:]
 
 
@@ -70,9 +77,10 @@ class Scaler:
         return {"mean": self.mean.tolist(), "std": self.std.tolist()}
 
     @classmethod
-    def from_dict(cls, d: dict) -> "Scaler":
-        return cls(mean=np.asarray(d["mean"], dtype=np.float64),
-                   std=np.asarray(d["std"], dtype=np.float64))
+    def from_dict(cls, d: dict) -> Scaler:
+        return cls(
+            mean=np.asarray(d["mean"], dtype=np.float64), std=np.asarray(d["std"], dtype=np.float64)
+        )
 
 
 @dataclass
@@ -91,33 +99,38 @@ class Dataset:
     @property
     def class_balance(self) -> dict:
         """Fraction of 'up' labels per split — a sanity check for skew."""
+
         def up(y: np.ndarray) -> float:
             return round(float(y.mean()), 4) if len(y) else 0.0
+
         return {"train": up(self.y_train), "val": up(self.y_val), "test": up(self.y_test)}
 
 
-def load_bars(session: Session, symbol: str, timeframe: str,
-              start: str | None = None, end: str | None = None) -> np.ndarray:
+def load_bars(
+    session: Session, symbol: str, timeframe: str, start: str | None = None, end: str | None = None
+) -> np.ndarray:
     """Load OHLCV rows oldest-first as a float64 array, columns = FEATURE_COLS."""
     from models import OhlcvBar  # local import: keeps the pure logic DB-free
 
-    stmt = select(OhlcvBar).where(
-        OhlcvBar.symbol == symbol.upper(), OhlcvBar.timeframe == timeframe
-    )
+    # Symbols arrive canonical (schemas.normalize_symbol runs at the API edge).
+    stmt = select(OhlcvBar).where(OhlcvBar.symbol == symbol, OhlcvBar.timeframe == timeframe)
     if start:
         stmt = stmt.where(OhlcvBar.ts >= start)
     if end:
         stmt = stmt.where(OhlcvBar.ts <= end)
     rows = session.execute(stmt.order_by(OhlcvBar.ts.asc())).scalars().all()
     return np.array(
-        [[float(b.open), float(b.high), float(b.low), float(b.close), float(b.volume)]
-         for b in rows],
+        [
+            [float(b.open), float(b.high), float(b.low), float(b.close), float(b.volume)]
+            for b in rows
+        ],
         dtype=np.float64,
     )
 
 
-def _window_segment(feats: np.ndarray, closes: np.ndarray, seq_len: int,
-                    horizon: int) -> tuple[np.ndarray, np.ndarray]:
+def _window_segment(
+    feats: np.ndarray, closes: np.ndarray, seq_len: int, horizon: int
+) -> tuple[np.ndarray, np.ndarray]:
     """Sliding windows over one contiguous segment.
 
     Window i = feats[i : i+seq_len]; label = 1 if the close `horizon` bars after
@@ -137,8 +150,12 @@ def _window_segment(feats: np.ndarray, closes: np.ndarray, seq_len: int,
     return np.stack(xs), np.asarray(ys, dtype=np.int64)
 
 
-def build_dataset(raw: np.ndarray, seq_len: int = 60, horizon: int = 1,
-                  split: tuple[float, float, float] = (0.7, 0.15, 0.15)) -> Dataset:
+def build_dataset(
+    raw: np.ndarray,
+    seq_len: int = 60,
+    horizon: int = 1,
+    split: tuple[float, float, float] = (0.7, 0.15, 0.15),
+) -> Dataset:
     """Build a leakage-safe windowed dataset from a raw OHLCV array.
 
     Steps: derive return features (labels stay on raw price) → split by time →
@@ -167,7 +184,7 @@ def build_dataset(raw: np.ndarray, seq_len: int = 60, horizon: int = 1,
     # Guard near-zero std (not just exact 0): a column that's constant over the
     # train window computes a tiny float residual (~1e-14), and dividing by it
     # would amplify noise into garbage features.
-    std[std < 1e-8] = 1.0
+    std[std < _STD_EPS] = 1.0
     scaler = Scaler(mean=mean, std=std)
     scaled = scaler.transform(feats)
 
@@ -181,8 +198,12 @@ def build_dataset(raw: np.ndarray, seq_len: int = 60, horizon: int = 1,
         out[name] = _window_segment(seg_feats, seg_closes, seq_len, horizon)
 
     return Dataset(
-        X_train=out["train"][0], y_train=out["train"][1],
-        X_val=out["val"][0], y_val=out["val"][1],
-        X_test=out["test"][0], y_test=out["test"][1],
-        scaler=scaler, n_features=N_FEATURES,
+        X_train=out["train"][0],
+        y_train=out["train"][1],
+        X_val=out["val"][0],
+        y_val=out["val"][1],
+        X_test=out["test"][0],
+        y_test=out["test"][1],
+        scaler=scaler,
+        n_features=N_FEATURES,
     )

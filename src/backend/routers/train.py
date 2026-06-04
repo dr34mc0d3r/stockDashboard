@@ -3,66 +3,49 @@
 `POST /train/lstm` creates a queued `training_runs` row, spawns a background
 worker, and returns immediately. The frontend then polls `GET /runs/{id}` to
 watch `status` and the per-epoch `progress` list update live.
+
+Thin HTTP layer: run bookkeeping lives in services/training/run_service.py and
+the actual training in services/training/trainer.py.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import select
 
-from db import get_session
-from models import OhlcvBar, TrainingRun
+from db import SessionDep
+from models import TrainingRun
 from schemas import PredictionsOut, TrainingRunOut, TrainLstmRequest
 from services.predict_service import predict_overlay
+from services.training import run_service
 from services.training.trainer import start_training
 
 router = APIRouter(prefix="/api/v1", tags=["train"])
 
 
 @router.post("/train/lstm", response_model=TrainingRunOut)
-def train_lstm(req: TrainLstmRequest, session: Session = Depends(get_session)):
+def train_lstm(req: TrainLstmRequest, session: SessionDep) -> TrainingRun:
     # Fail fast if there's no stored data for this slice.
-    bar_count = session.execute(
-        select(func.count())
-        .select_from(OhlcvBar)
-        .where(OhlcvBar.symbol == req.symbol, OhlcvBar.timeframe == req.timeframe)
-    ).scalar_one()
-    if bar_count == 0:
+    if run_service.count_bars(session, req.symbol, req.timeframe) == 0:
         raise HTTPException(
             status_code=400,
             detail=f"No stored bars for {req.symbol} {req.timeframe}. Ingest data first.",
         )
 
-    hp = req.hyperparams.model_dump()
-    run = TrainingRun(
-        stage="lstm",
-        symbol=req.symbol,
-        timeframe=req.timeframe,
-        start=req.start,
-        end=req.end,
-        status="queued",
-        hyperparams=hp,
-        progress=[],
-    )
-    session.add(run)
-    session.commit()
-    session.refresh(run)
-
-    start_training(run.id, req.symbol, req.timeframe, hp, req.start, req.end)
+    run = run_service.create_run(session, req)
+    start_training(run.id, req.symbol, req.timeframe, run.hyperparams, req.start, req.end)
     return run
 
 
 @router.get("/runs", response_model=list[TrainingRunOut])
-def list_runs(stage: str | None = None, limit: int = 50,
-              session: Session = Depends(get_session)):
+def list_runs(session: SessionDep, stage: str | None = None, limit: int = 50) -> list[TrainingRun]:
     stmt = select(TrainingRun)
     if stage:
         stmt = stmt.where(TrainingRun.stage == stage)
     stmt = stmt.order_by(TrainingRun.id.desc()).limit(limit)
-    return session.execute(stmt).scalars().all()
+    return list(session.execute(stmt).scalars().all())
 
 
 @router.get("/runs/{run_id}", response_model=TrainingRunOut)
-def get_run(run_id: int, session: Session = Depends(get_session)):
+def get_run(run_id: int, session: SessionDep) -> TrainingRun:
     run = session.get(TrainingRun, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail=f"No training run {run_id}")
@@ -70,8 +53,11 @@ def get_run(run_id: int, session: Session = Depends(get_session)):
 
 
 @router.get("/runs/{run_id}/predictions", response_model=PredictionsOut)
-def run_predictions(run_id: int, limit: int = Query(default=200, ge=10, le=1000),
-                    session: Session = Depends(get_session)):
+def run_predictions(
+    run_id: int,
+    session: SessionDep,
+    limit: int = Query(default=200, ge=10, le=1000),
+) -> PredictionsOut:
     """Run the saved model over recent bars for charting its per-candle calls."""
     run = session.get(TrainingRun, run_id)
     if run is None:
@@ -80,5 +66,5 @@ def run_predictions(run_id: int, limit: int = Query(default=200, ge=10, le=1000)
         raise HTTPException(status_code=400, detail="Run has no saved model yet.")
     try:
         return predict_overlay(session, run, limit=limit)
-    except FileNotFoundError:
-        raise HTTPException(status_code=410, detail="Model artifact is missing on disk.")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=410, detail="Model artifact is missing on disk.") from e

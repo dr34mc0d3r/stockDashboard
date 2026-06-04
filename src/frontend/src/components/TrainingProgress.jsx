@@ -1,12 +1,7 @@
 // Live training status for one run: a status badge, epoch counter, final
 // test metrics, and a 2x2 confusion matrix. Reusable across stages.
 
-const STATUS_STYLES = {
-  queued: 'bg-slate-500/20 text-slate-300',
-  running: 'bg-amber-500/20 text-amber-300',
-  done: 'bg-emerald-500/20 text-emerald-300',
-  error: 'bg-red-500/20 text-red-300',
-}
+import { STATUS_STYLES } from '../lib/statusStyles.js'
 
 export default function TrainingProgress({ run }) {
   if (!run) return null
@@ -17,7 +12,9 @@ export default function TrainingProgress({ run }) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status] ?? ''}`}>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLES[status] ?? ''}`}
+        >
           {status}
         </span>
         <span className="text-slate-400">run #{run.id}</span>
@@ -42,7 +39,11 @@ export default function TrainingProgress({ run }) {
       {status === 'done' && metrics && (
         <div className="flex flex-wrap gap-6">
           <div className="space-y-1 text-sm">
-            <Stat label="Test accuracy" value={`${(metrics.test_acc * 100).toFixed(2)}%`} highlight />
+            <Stat
+              label="Test accuracy"
+              value={`${(metrics.test_acc * 100).toFixed(2)}%`}
+              highlight
+            />
             <Stat label="Test loss" value={metrics.test_loss} />
             <Stat label="Best val loss" value={metrics.best_val_loss} />
             <Stat label="Epochs run" value={metrics.epochs_run} />
@@ -62,7 +63,9 @@ function Stat({ label, value, highlight }) {
   return (
     <div className="flex justify-between gap-6">
       <span className="text-slate-500">{label}</span>
-      <span className={`tabular-nums ${highlight ? 'font-semibold text-emerald-300' : 'text-slate-200'}`}>
+      <span
+        className={`tabular-nums ${highlight ? 'font-semibold text-emerald-300' : 'text-slate-200'}`}
+      >
         {value}
       </span>
     </div>

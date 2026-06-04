@@ -1,7 +1,9 @@
 """SQLAlchemy engine, session factory, and declarative base for MariaDB."""
 
 from collections.abc import Iterator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -35,3 +37,9 @@ def get_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+# The one annotation every router handler uses for its DB session. Writing
+# `session: SessionDep` keeps handler signatures short and gives tests a single
+# dependency (get_session) to override.
+SessionDep = Annotated[Session, Depends(get_session)]

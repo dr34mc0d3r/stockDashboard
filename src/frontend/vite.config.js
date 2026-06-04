@@ -12,4 +12,9 @@ export default defineConfig({
       '/api': 'http://localhost:8000',
     },
   },
+  // Vitest: only pure-logic suites (lib/*.test.js) — no DOM needed.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.js'],
+  },
 })

@@ -16,9 +16,7 @@ def _upsert_bars(session: Session, symbol: str, timeframe: str, bars: list[dict]
     """Idempotent bulk insert: on PK conflict, refresh OHLCV values."""
     for i in range(0, len(bars), CHUNK_SIZE):
         chunk = bars[i : i + CHUNK_SIZE]
-        rows = [
-            {"symbol": symbol, "timeframe": timeframe, **bar} for bar in chunk
-        ]
+        rows = [{"symbol": symbol, "timeframe": timeframe, **bar} for bar in chunk]
         stmt = mysql_insert(OhlcvBar).values(rows)
         stmt = stmt.on_duplicate_key_update(
             open=stmt.inserted.open,

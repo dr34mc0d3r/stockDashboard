@@ -6,6 +6,8 @@ import {
   HistogramSeries,
 } from 'lightweight-charts'
 
+import { CHART_HEIGHT_PX } from '../constants.js'
+
 // Stored bar timestamps are naive UTC ("2025-05-01T08:00:00"); append 'Z' so
 // the browser parses them as UTC, then convert to epoch seconds for the chart.
 const toEpoch = (ts) => Math.floor(new Date(ts + 'Z').getTime() / 1000)
@@ -124,7 +126,7 @@ export default function PriceChart({ bars, symbol, timeframe, markers }) {
         </span>
         <span ref={legendRef} className="text-slate-400" />
       </div>
-      <div ref={containerRef} className="h-[460px] w-full" />
+      <div ref={containerRef} className="w-full" style={{ height: CHART_HEIGHT_PX }} />
     </div>
   )
 }

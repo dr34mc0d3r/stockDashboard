@@ -28,12 +28,13 @@ _window_segment = datasets._window_segment
 def _ramp(n, start=100.0, step=1.0, vol=1000):
     """Monotonic-rising OHLCV array of n bars (close strictly increasing)."""
     close = start + step * np.arange(n)
-    return np.column_stack(
-        [close, close + 0.5, close - 0.5, close, np.full(n, vol)]
-    ).astype("float64")
+    return np.column_stack([close, close + 0.5, close - 0.5, close, np.full(n, vol)]).astype(
+        "float64"
+    )
 
 
 # --- the core leakage guard: scaler fit on TRAIN feature rows only ---
+
 
 def test_scaler_uses_train_feature_rows_only_not_whole_series():
     # Features are returns. Train region = low volatility; val/test = high
@@ -41,19 +42,19 @@ def test_scaler_uses_train_feature_rows_only_not_whole_series():
     rng = np.random.default_rng(0)
     n = 400
     rets = np.empty(n)
-    rets[:280] = rng.normal(0, 0.001, 280)        # train: low-vol returns
-    rets[280:] = rng.normal(0, 0.05, n - 280)     # val+test: high-vol returns
+    rets[:280] = rng.normal(0, 0.001, 280)  # train: low-vol returns
+    rets[280:] = rng.normal(0, 0.05, n - 280)  # val+test: high-vol returns
     close = 100.0 * np.exp(np.cumsum(rets))
     raw = np.column_stack([close, close, close, close, np.full(n, 1000.0)]).astype("float64")
 
     ds = build_dataset(raw, seq_len=20, horizon=1, split=(0.7, 0.15, 0.15))
 
-    feats, _ = datasets._return_features(raw)      # the actual model features
-    m = len(feats)                                  # n - 1
+    feats, _ = datasets._return_features(raw)  # the actual model features
+    m = len(feats)  # n - 1
     i_train = int(m * 0.7)
     expected_mean = feats[:i_train].mean(axis=0)
     expected_std = feats[:i_train].std(axis=0)
-    expected_std[expected_std < 1e-8] = 1.0         # mirror the near-zero guard
+    expected_std[expected_std < 1e-8] = 1.0  # mirror the near-zero guard
 
     np.testing.assert_allclose(ds.scaler.mean, expected_mean)
     np.testing.assert_allclose(ds.scaler.std, expected_std)
@@ -76,6 +77,7 @@ def test_scaler_standardizes_train_features_to_zero_mean_unit_std():
 
 
 # --- time-ordered, per-segment windowing (no cross-boundary leakage) ---
+
 
 def test_windows_are_built_within_each_segment():
     n, seq_len, horizon = 500, 60, 1
@@ -119,6 +121,7 @@ def test_window_shapes_and_feature_count():
 
 # --- label correctness (direction over the horizon) ---
 
+
 def test_labels_all_up_for_rising_series():
     feats = _ramp(100)
     closes = feats[:, datasets.CLOSE_IDX]
@@ -146,6 +149,7 @@ def test_horizon_shifts_the_label_target():
 
 
 # --- guards ---
+
 
 def test_too_few_bars_raises():
     with pytest.raises(ValueError, match="Not enough bars"):

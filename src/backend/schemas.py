@@ -8,6 +8,16 @@ from pydantic import BaseModel, Field, field_validator
 Timeframe = Literal["1m", "5m", "1h", "1d"]
 
 
+def normalize_symbol(value: str) -> str:
+    """Canonical ticker form: trimmed and uppercased.
+
+    The single place symbol normalization happens. Request schemas apply it via
+    their validators; the data router applies it to raw query params. Code past
+    those entry points can assume symbols are already canonical.
+    """
+    return value.strip().upper()
+
+
 class IngestRequest(BaseModel):
     symbol: str = Field(..., min_length=1, max_length=16, examples=["AAPL"])
     start: str = Field(..., description="ISO date YYYY-MM-DD or RFC3339")
@@ -16,8 +26,8 @@ class IngestRequest(BaseModel):
 
     @field_validator("symbol")
     @classmethod
-    def _upper(cls, v: str) -> str:
-        return v.strip().upper()
+    def _normalize(cls, v: str) -> str:
+        return normalize_symbol(v)
 
 
 class IngestResponse(BaseModel):
@@ -75,15 +85,15 @@ class TrainLstmRequest(BaseModel):
 
     @field_validator("symbol")
     @classmethod
-    def _upper(cls, v: str) -> str:
-        return v.strip().upper()
+    def _normalize(cls, v: str) -> str:
+        return normalize_symbol(v)
 
 
 class PredictionPoint(BaseModel):
     ts: datetime
-    prob: float       # model's P(up) for the next bar
-    pred: int         # 1 = predicted up, 0 = predicted down
-    actual: int       # what actually happened (1 up / 0 down)
+    prob: float  # model's P(up) for the next bar
+    pred: int  # 1 = predicted up, 0 = predicted down
+    actual: int  # what actually happened (1 up / 0 down)
 
 
 class PredictionsOut(BaseModel):

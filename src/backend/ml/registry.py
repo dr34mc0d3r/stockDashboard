@@ -21,8 +21,15 @@ def artifact_path(run_id: int, stage: str) -> Path:
     return ARTIFACT_DIR / f"{stage}_run{run_id}.pt"
 
 
-def save(run_id: int, stage: str, model: torch.nn.Module, hyperparams: dict,
-         scaler: dict, n_features: int, metrics: dict | None = None) -> str:
+def save(
+    run_id: int,
+    stage: str,
+    model: torch.nn.Module,
+    hyperparams: dict,
+    scaler: dict,
+    n_features: int,
+    metrics: dict | None = None,
+) -> str:
     """Persist a trained model bundle; returns the artifact path as a string."""
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     path = artifact_path(run_id, stage)

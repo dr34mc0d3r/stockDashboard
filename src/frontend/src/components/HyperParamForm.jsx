@@ -18,9 +18,7 @@ export default function HyperParamForm({ fields, values, onChange, disabled }) {
             min={f.min}
             max={f.max}
             disabled={disabled}
-            onChange={(e) =>
-              onChange(f.key, e.target.value === '' ? '' : Number(e.target.value))
-            }
+            onChange={(e) => onChange(f.key, e.target.value === '' ? '' : Number(e.target.value))}
             className="rounded-md border border-slate-700 bg-slate-900 px-3 py-2 tabular-nums disabled:opacity-50"
           />
           {f.hint && <span className="text-xs text-slate-600">{f.hint}</span>}

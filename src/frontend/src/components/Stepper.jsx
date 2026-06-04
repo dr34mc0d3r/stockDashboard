@@ -17,8 +17,7 @@ export default function Stepper() {
   return (
     <nav className="flex flex-col gap-1">
       {STAGES.map((s) => {
-        const base =
-          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition'
+        const base = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition'
         if (!s.ready) {
           return (
             <div
@@ -37,9 +36,7 @@ export default function Stepper() {
             to={s.path}
             className={({ isActive }) =>
               `${base} ${
-                isActive
-                  ? 'bg-sky-500/15 text-sky-300'
-                  : 'text-slate-300 hover:bg-slate-800'
+                isActive ? 'bg-sky-500/15 text-sky-300' : 'text-slate-300 hover:bg-slate-800'
               }`
             }
           >
