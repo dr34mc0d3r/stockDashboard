@@ -54,3 +54,13 @@ dev = [
     "pytest>=9.0.3",
     "ruff>=0.6",
 ]
+# Stage 4 (FinBERT). Optional: the app boots without it — all transformers
+# imports are lazy inside services/sentiment/scorer.py. Pins chosen for
+# torch==2.2.2 / Python 3.11 / x86_64 macOS wheels (tokenizers >=0.20 drops
+# this platform; transformers <4.46 still accepts the 0.19 line).
+sentiment = [
+    "transformers>=4.40,<4.46",
+    "tokenizers>=0.19,<0.20",
+    "safetensors>=0.4.3",
+    "huggingface-hub>=0.23,<0.26",
+]

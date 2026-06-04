@@ -51,6 +51,14 @@ export default function TrainingProgress({ run }) {
               label="Up-label balance (tr/va/te)"
               value={`${metrics.class_balance.train} / ${metrics.class_balance.val} / ${metrics.class_balance.test}`}
             />
+            {/* Stage 3 multitask runs add per-head regression metrics. */}
+            {metrics.ret_mae != null && (
+              <Stat label="Return MAE (log-ret)" value={metrics.ret_mae} />
+            )}
+            {metrics.vol_mae != null && (
+              <Stat label="Volatility MAE (std-log)" value={metrics.vol_mae} />
+            )}
+            {metrics.n_features != null && <Stat label="Features" value={metrics.n_features} />}
           </div>
           <ConfusionMatrix c={metrics.confusion} />
         </div>

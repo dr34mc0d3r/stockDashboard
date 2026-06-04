@@ -73,6 +73,10 @@ export const STAGE_FILES = [
         desc: 'The one-click example presets (smoke test, LR steps, overfit, honest baseline), each tuned to surface a specific lesson.',
       },
       {
+        path: 'src/frontend/src/pages/stage2/stageFiles.js',
+        desc: 'The data for this very section — the grouped file list FilesPanel renders.',
+      },
+      {
         path: 'src/frontend/src/pages/stage2/ExamplesPanel.jsx',
         desc: 'The Examples section UI: the preset cards with their expected outcomes, parameter chips, and Apply buttons.',
       },
@@ -114,7 +118,7 @@ export const STAGE_FILES = [
       },
       {
         path: 'src/frontend/src/components/RunsTable.jsx',
-        desc: 'The "Past Runs — Compare" table: every run\'s key params, test accuracy and baseline edge side by side, with View (reload its results) and Use params (load its config into the form) actions.',
+        desc: 'The "Past Runs — Compare" table: every run\'s key params, test accuracy and baseline edge side by side, with View (reload its results), Use params (load its config into the form) and Delete (remove the run + its saved artifact; failed runs show their error inline) actions.',
       },
       {
         path: 'src/frontend/src/lib/runStats.js',
@@ -123,6 +127,14 @@ export const STAGE_FILES = [
       {
         path: 'src/frontend/src/lib/statusStyles.js',
         desc: 'The run-status → Tailwind badge color map, shared by TrainingProgress and RunsTable.',
+      },
+      {
+        path: 'src/frontend/src/lib/types.js',
+        desc: 'JSDoc typedefs for the shapes crossing the API boundary (Run, EpochProgress, RunMetrics, Bar, …) — editor autocomplete and shape-checking without TypeScript.',
+      },
+      {
+        path: 'src/frontend/src/constants.js',
+        desc: 'App-wide named constants: POLL_INTERVAL_MS (the 1.5s run-polling cadence used by usePolledRun) and CHART_HEIGHT_PX (the candlestick chart height).',
       },
       {
         path: 'src/frontend/src/charts/PriceChart.jsx',
@@ -135,6 +147,27 @@ export const STAGE_FILES = [
       {
         path: 'src/frontend/src/components/ui/ · FilesPanel.jsx · LessonPanel.jsx · Stepper.jsx · App.jsx · main.jsx',
         desc: 'Shared UI primitives (Section, Field, Table, ErrorNote), this files section, the markdown lesson renderer, the stage stepper, the app layout, and the router (see Stage 1).',
+      },
+    ],
+  },
+  {
+    label: 'Tests — proving it works',
+    files: [
+      {
+        path: 'src/backend/tests/conftest.py',
+        desc: 'Shared test fixtures: the FastAPI app wired to an in-memory SQLite database by overriding the get_session dependency, with tables dropped and recreated per test (see Stage 1). Run the whole backend suite from the repo root with: uv run pytest',
+      },
+      {
+        path: 'src/backend/tests/test_datasets.py',
+        desc: "The leakage guards, under test: the scaler's mean/std come from the training split only, windows never cross a split boundary, labels track the real close price through the return-feature transform, and too-few bars fails with a helpful error. These tests are why you can trust the test accuracy is honest. Run with: uv run pytest src/backend/tests/test_datasets.py",
+      },
+      {
+        path: 'src/backend/tests/test_train_router.py',
+        desc: 'The training API contract: POST /train/lstm returns 400 with no stored bars and otherwise creates a queued run (the worker thread is monkeypatched to a no-op — the real training loop is verified end-to-end through this page); runs list newest-first with stage/limit filters; missing runs 404; predictions require a finished run with a saved artifact. Run with: uv run pytest src/backend/tests/test_train_router.py',
+      },
+      {
+        path: 'src/frontend/src/lib/runStats.test.js',
+        desc: "Vitest suite for the verdict math: majority baseline, edge-vs-noise significance (2 standard errors), the LSTM parameter count formula, and analyzeRun's findings (no-edge, overfitting, tiny dataset, collapsed predictions) against hand-crafted runs. Run from src/frontend with: npm test",
       },
     ],
   },

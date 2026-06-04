@@ -150,6 +150,242 @@ def _window_segment(
     return np.stack(xs), np.asarray(ys, dtype=np.int64)
 
 
+# ---------------------------------------------------------------------------
+# Stage 3: multi-task dataset (direction + return + volatility)
+# ---------------------------------------------------------------------------
+# NOTE: this module deliberately never imports the indicator code — the caller
+# (services/features/feature_pipeline.py) computes the indicator matrix and
+# passes it in, so this file stays loadable standalone by its tests.
+
+
+@dataclass
+class TargetStats:
+    """Train-split mean/std used to standardize one regression target."""
+
+    mean: float
+    std: float
+
+    def standardize(self, y: np.ndarray) -> np.ndarray:
+        return (y - self.mean) / self.std
+
+    def unstandardize(self, y: np.ndarray) -> np.ndarray:
+        return y * self.std + self.mean
+
+    def to_dict(self) -> dict:
+        return {"mean": self.mean, "std": self.std}
+
+    @classmethod
+    def fit(cls, y: np.ndarray) -> TargetStats:
+        std = float(y.std()) if len(y) else 1.0
+        return cls(mean=float(y.mean()) if len(y) else 0.0, std=std if std > _STD_EPS else 1.0)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TargetStats:
+        return cls(mean=d["mean"], std=d["std"])
+
+
+@dataclass
+class MultiTaskDataset:
+    """Windowed, scaled, split arrays with three label sets per window."""
+
+    X_train: np.ndarray
+    y_dir_train: np.ndarray  # binary direction (as Stage 2)
+    y_ret_train: np.ndarray  # standardized log return over `horizon`
+    y_vol_train: np.ndarray  # standardized log1p realized vol over `vol_window`
+    X_val: np.ndarray
+    y_dir_val: np.ndarray
+    y_ret_val: np.ndarray
+    y_vol_val: np.ndarray
+    X_test: np.ndarray
+    y_dir_test: np.ndarray
+    y_ret_test: np.ndarray
+    y_vol_test: np.ndarray
+    scaler: Scaler
+    n_features: int
+    feature_names: list[str]
+    ret_stats: TargetStats
+    vol_stats: TargetStats
+    warmup_rows: int  # rows dropped while indicators were still warming up
+
+    @property
+    def class_balance(self) -> dict:
+        """Fraction of 'up' labels per split (direction head)."""
+
+        def up(y: np.ndarray) -> float:
+            return round(float(y.mean()), 4) if len(y) else 0.0
+
+        return {
+            "train": up(self.y_dir_train),
+            "val": up(self.y_dir_val),
+            "test": up(self.y_dir_test),
+        }
+
+
+def _window_segment_multitask(
+    feats: np.ndarray, closes: np.ndarray, seq_len: int, horizon: int, vol_window: int
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Sliding windows over one contiguous segment, with three labels each.
+
+    For a window ending at bar e (= i + seq_len - 1):
+      direction  = 1 if close[e + horizon] > close[e] else 0
+      log return = ln(close[e + horizon] / close[e])
+      volatility = population std of the next `vol_window` one-bar log returns
+                   (bars e..e+vol_window), i.e. realized vol right after the window.
+    """
+    n = len(feats)
+    lookahead = max(horizon, vol_window)  # bars needed beyond the window end
+    xs, y_dir, y_ret, y_vol = [], [], [], []
+    for i in range(0, n - seq_len - lookahead + 1):
+        end = i + seq_len  # one past the window's last bar
+        ref_close = closes[end - 1]
+        fut_close = closes[end - 1 + horizon]
+        next_rets = np.log(closes[end : end + vol_window] / closes[end - 1 : end + vol_window - 1])
+        xs.append(feats[i:end])
+        y_dir.append(1 if fut_close > ref_close else 0)
+        y_ret.append(np.log(fut_close / ref_close))
+        y_vol.append(float(next_rets.std()))
+    if not xs:
+        k = feats.shape[1] if feats.ndim == 2 else 0
+        empty = np.empty((0,), dtype=np.float64)
+        return np.empty((0, seq_len, k)), np.empty((0,), dtype=np.int64), empty, empty
+    return (
+        np.stack(xs),
+        np.asarray(y_dir, dtype=np.int64),
+        np.asarray(y_ret, dtype=np.float64),
+        np.asarray(y_vol, dtype=np.float64),
+    )
+
+
+def build_multitask_dataset(
+    raw: np.ndarray,
+    indicator_feats: np.ndarray,
+    feature_names: list[str],
+    seq_len: int = 60,
+    horizon: int = 1,
+    vol_window: int = 5,
+    split: tuple[float, float, float] = (0.7, 0.15, 0.15),
+) -> MultiTaskDataset:
+    """Leakage-safe multi-task dataset: return features + indicators, 3 labels.
+
+    ``indicator_feats`` is (len(raw), k) aligned 1:1 with ``raw``, ``np.nan``
+    during indicator warm-up. Steps: derive return features (drops bar 0) →
+    align the indicator rows → trim the warm-up (rows before every indicator
+    column is finite) → concat into one wide matrix → time split → scaler fit
+    on train rows only → window each segment with direction/return/volatility
+    labels → standardize the regression targets with train-split stats.
+    """
+    n = len(raw)
+    if indicator_feats.shape[0] != n:
+        raise ValueError(
+            f"indicator_feats has {indicator_feats.shape[0]} rows but raw has {n} bars"
+        )
+    vol_window = max(2, int(vol_window))  # std needs at least 2 returns
+
+    # Return features; row k describes raw bar k+1 — align indicators the same.
+    feats5, aligned_closes = _return_features(raw)
+    ind = indicator_feats[1:]
+
+    # Warm-up trim: drop rows until EVERY indicator column has a value.
+    if ind.shape[1]:
+        valid = np.isfinite(ind).all(axis=1)
+        if not valid.any():
+            raise ValueError(
+                "No rows where every indicator is warmed up — the slice is shorter "
+                "than the longest indicator window. Pick a larger date range."
+            )
+        first_valid = int(np.argmax(valid))
+    else:
+        first_valid = 0
+
+    feats = np.hstack([feats5, ind])[first_valid:]
+    closes = aligned_closes[first_valid:]
+    m = len(feats)
+
+    min_needed = seq_len + max(horizon, vol_window)
+    if m < min_needed + 11:
+        raise ValueError(
+            f"Not enough usable bars after indicator warm-up: have {m}, need > "
+            f"{min_needed + 11} for seq_len={seq_len}, horizon={horizon}, "
+            f"vol_window={vol_window}. Pick a larger date range."
+        )
+
+    f_train, f_val, _ = split
+    i_train = int(m * f_train)
+    i_val = int(m * (f_train + f_val))
+
+    # Scaler fit on TRAIN feature rows only — the leakage guard.
+    train_rows = feats[:i_train]
+    mean = train_rows.mean(axis=0)
+    std = train_rows.std(axis=0)
+    std[std < _STD_EPS] = 1.0
+    scaler = Scaler(mean=mean, std=std)
+    scaled = scaler.transform(feats)
+
+    segments = {
+        "train": (scaled[:i_train], closes[:i_train]),
+        "val": (scaled[i_train:i_val], closes[i_train:i_val]),
+        "test": (scaled[i_val:], closes[i_val:]),
+    }
+    out = {
+        name: _window_segment_multitask(seg_feats, seg_closes, seq_len, horizon, vol_window)
+        for name, (seg_feats, seg_closes) in segments.items()
+    }
+
+    # Every split must yield at least one window — silent empties would make
+    # validation (and early stopping) meaningless. Fail with the fix instead.
+    if any(split_frac > 0 for split_frac in split):
+        for name, frac in zip(("train", "val", "test"), split):
+            if frac > 0 and len(out[name][0]) == 0:
+                seg_rows = len(segments[name][0])
+                raise ValueError(
+                    f"The {name} split has {seg_rows} usable rows — too few for even one "
+                    f"window of seq_len={seq_len} (+{max(horizon, vol_window)} lookahead). "
+                    "Reduce seq_len, shrink vol_window, or widen the date range."
+                )
+
+    # Regression targets standardized by TRAIN stats (vol via log1p first —
+    # it's non-negative and skewed; the log makes MSE behave).
+    ret_stats = TargetStats.fit(out["train"][2])
+    vol_stats = TargetStats.fit(np.log1p(out["train"][3]))
+
+    def pack(name: str) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        X, y_dir, y_ret, y_vol = out[name]
+        return X, y_dir, ret_stats.standardize(y_ret), vol_stats.standardize(np.log1p(y_vol))
+
+    X_tr, d_tr, r_tr, v_tr = pack("train")
+    X_va, d_va, r_va, v_va = pack("val")
+    X_te, d_te, r_te, v_te = pack("test")
+
+    n_features = feats.shape[1]
+    return MultiTaskDataset(
+        X_train=X_tr,
+        y_dir_train=d_tr,
+        y_ret_train=r_tr,
+        y_vol_train=v_tr,
+        X_val=X_va,
+        y_dir_val=d_va,
+        y_ret_val=r_va,
+        y_vol_val=v_va,
+        X_test=X_te,
+        y_dir_test=d_te,
+        y_ret_test=r_te,
+        y_vol_test=v_te,
+        scaler=scaler,
+        n_features=n_features,
+        feature_names=[
+            "ret_open",
+            "ret_high",
+            "ret_low",
+            "ret_close",
+            "log_volume",
+            *feature_names,
+        ],
+        ret_stats=ret_stats,
+        vol_stats=vol_stats,
+        warmup_rows=first_valid,
+    )
+
+
 def build_dataset(
     raw: np.ndarray,
     seq_len: int = 60,

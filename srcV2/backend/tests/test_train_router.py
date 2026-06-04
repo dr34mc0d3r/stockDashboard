@@ -97,6 +97,130 @@ def test_get_run_found_and_missing(client, session):
     assert client.get("/api/v1/runs/99999").status_code == 404
 
 
+def test_train_multitask_without_stored_bars_is_400(client, monkeypatch):
+    monkeypatch.setattr(routers.train, "start_training_multitask", lambda *a, **k: None)
+
+    res = client.post(
+        "/api/v1/train/multitask",
+        json={"symbol": "AAPL", "timeframe": "1m", "hyperparams": {}},
+    )
+
+    assert res.status_code == 400
+    assert "No stored bars" in res.json()["detail"]
+
+
+def test_train_multitask_creates_a_queued_run_with_indicators(client, session, monkeypatch):
+    calls = []
+    monkeypatch.setattr(routers.train, "start_training_multitask", lambda *a, **k: calls.append(a))
+    seed_bars(session, symbol="TSLA")
+
+    res = client.post(
+        "/api/v1/train/multitask",
+        json={
+            "symbol": "tsla",
+            "timeframe": "1m",
+            "hyperparams": {
+                "seq_len": 30,
+                "w_vol": 2.0,
+                "indicators": [{"name": "rsi", "params": {"period": 7}}],
+            },
+        },
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["stage"] == "multitask"
+    assert body["status"] == "queued"
+    assert body["symbol"] == "TSLA"
+    assert body["hyperparams"]["w_vol"] == 2.0
+    assert body["hyperparams"]["indicators"] == [{"name": "rsi", "params": {"period": 7}}]
+    assert len(calls) == 1
+
+
+def test_train_sentiment_requires_cached_sentiment(client, session, monkeypatch):
+    monkeypatch.setattr(routers.train, "start_training_multitask", lambda *a, **k: None)
+    seed_bars(session, symbol="TSLA")
+
+    res = client.post(
+        "/api/v1/train/sentiment",
+        json={
+            "symbol": "TSLA",
+            "timeframe": "1m",
+            "hyperparams": {"sentiment": {"enabled": True}},
+        },
+    )
+
+    assert res.status_code == 400
+    assert "Run sentiment prep" in res.json()["detail"]
+
+
+def test_train_sentiment_creates_a_queued_run(client, session, monkeypatch):
+    calls = []
+    monkeypatch.setattr(routers.train, "start_training_multitask", lambda *a, **k: calls.append(a))
+    seed_bars(session, symbol="TSLA")
+    # Seed one cached daily aggregate so the coverage check passes.
+    from models import FeatureCache
+    from services.sentiment.prep_service import FEATURE_SET
+
+    session.add(
+        FeatureCache(
+            symbol="TSLA",
+            timeframe="1d",
+            ts=datetime(2025, 1, 1),
+            feature_set=FEATURE_SET,
+            payload={"net": 0.2, "count": 3},
+        )
+    )
+    session.commit()
+
+    res = client.post(
+        "/api/v1/train/sentiment",
+        json={
+            "symbol": "tsla",
+            "timeframe": "1m",
+            "hyperparams": {
+                "sentiment": {"enabled": True, "lag_days": 1},
+                "indicators": [{"name": "rsi", "params": {"period": 7}}],
+            },
+        },
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["stage"] == "sentiment"
+    assert body["status"] == "queued"
+    assert body["hyperparams"]["sentiment"] == {"enabled": True, "lag_days": 1}
+    assert len(calls) == 1
+
+
+def test_delete_run_removes_row_and_artifact(client, session, tmp_path):
+    artifact = tmp_path / "lstm_run_test.pt"
+    artifact.write_bytes(b"fake-model")
+    run = seed_run(session, status="done", artifact_path=str(artifact))
+
+    res = client.delete(f"/api/v1/runs/{run.id}")
+
+    assert res.status_code == 200
+    assert res.json() == {"deleted": run.id}
+    assert not artifact.exists()
+    assert client.get(f"/api/v1/runs/{run.id}").status_code == 404
+
+
+def test_delete_run_refuses_active_runs(client, session):
+    active = seed_run(session, status="running")
+
+    res = client.delete(f"/api/v1/runs/{active.id}")
+
+    assert res.status_code == 409
+    assert "in progress" in res.json()["detail"]
+    # Still there.
+    assert client.get(f"/api/v1/runs/{active.id}").status_code == 200
+
+
+def test_delete_missing_run_is_404(client):
+    assert client.delete("/api/v1/runs/99999").status_code == 404
+
+
 def test_predictions_require_a_finished_run_with_artifact(client, session):
     unfinished = seed_run(session, status="running")
     no_artifact = seed_run(session, status="done", artifact_path=None)

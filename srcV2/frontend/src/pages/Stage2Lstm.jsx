@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { getRunPredictions, getRuns, trainLstm } from '../api/client.js'
+import { deleteRun, getRunPredictions, getRuns, trainLstm } from '../api/client.js'
 import FilesPanel from '../components/FilesPanel.jsx'
 import LessonPanel from '../components/LessonPanel.jsx'
 import RunsTable from '../components/RunsTable.jsx'
@@ -61,6 +61,26 @@ export default function Stage2Lstm() {
     setRun(r)
     setOverlay(null)
     setError('')
+  }
+
+  const removeRun = async (r) => {
+    if (
+      !window.confirm(
+        `Delete run #${r.id} (${r.symbol} · ${r.timeframe}) and its saved model? This cannot be undone.`,
+      )
+    )
+      return
+    setError('')
+    try {
+      await deleteRun(r.id)
+      if (run?.id === r.id) {
+        setRun(null)
+        setOverlay(null)
+      }
+      refreshRuns()
+    } catch (err) {
+      setError(err.message)
+    }
   }
 
   // Load a past run's configuration back into the form (known fields only —
@@ -173,6 +193,7 @@ export default function Stage2Lstm() {
           busy={training}
           onView={viewRun}
           onUseParams={useRunParams}
+          onDelete={removeRun}
           onRefresh={refreshRuns}
         />
       </Section>

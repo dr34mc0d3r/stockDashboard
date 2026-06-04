@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DECIMAL, JSON, BigInteger, DateTime, Integer, String, Text, func
+from sqlalchemy import DECIMAL, JSON, BigInteger, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from db import Base
@@ -76,6 +76,29 @@ class TrainingRun(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class NewsArticle(Base):
+    """One news headline for a symbol, with its FinBERT scores once scored.
+
+    Composite primary key (symbol, id): `id` is Alpaca's stable article id
+    (free dedupe on re-fetch), and keying by symbol keeps per-symbol corpus
+    queries trivial even though Alpaca tags one article with many symbols.
+    The score columns stay NULL until the prep job runs FinBERT over the row.
+    """
+
+    __tablename__ = "news_articles"
+
+    symbol: Mapped[str] = mapped_column(String(16), primary_key=True)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, index=True)  # published (UTC, naive)
+    headline: Mapped[str] = mapped_column(String(512))
+    source: Mapped[str] = mapped_column(String(64), default="")
+    url: Mapped[str] = mapped_column(Text, default="")
+    pos: Mapped[float | None] = mapped_column(Float, nullable=True)
+    neg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    neutral: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class FeatureCache(Base):

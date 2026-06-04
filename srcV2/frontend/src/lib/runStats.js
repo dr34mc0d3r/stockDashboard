@@ -37,6 +37,13 @@ export function lstmParamCount(hp, nFeatures = 5) {
   return p + h + 1
 }
 
+// Stage 3 MultiTaskNet: the same LSTM trunk, but three h→1 heads instead of
+// one. nFeatures should include the indicator columns (5 + k).
+export function multitaskParamCount(hp, nFeatures = 5) {
+  const h = hp?.hidden ?? 64
+  return lstmParamCount(hp, nFeatures) + 2 * (h + 1) // two extra heads
+}
+
 const pct = (v) => `${(v * 100).toFixed(1)}%`
 const pts = (v) => `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}pt`
 
@@ -127,7 +134,9 @@ export function analyzeRun(run) {
 
   // --- 4. Model size vs data size ---------------------------------------
   if (m.n_train) {
-    const params = lstmParamCount(hp)
+    const nFeatures = m.n_features ?? 5
+    const params =
+      run.stage === 'multitask' ? multitaskParamCount(hp, nFeatures) : lstmParamCount(hp, nFeatures)
     const ratio = params / m.n_train
     if (m.n_train < 500) {
       findings.push({

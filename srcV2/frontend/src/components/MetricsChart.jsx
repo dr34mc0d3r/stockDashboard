@@ -136,6 +136,25 @@ export default function MetricsChart({ progress, accBaseline }) {
             : undefined
         }
       />
+      {/* Stage 3 multitask runs also chart the regression heads' val MAE. */}
+      {progress.some((p) => p.ret_mae != null) && (
+        <Plot
+          title="Return head — val MAE (log-return)"
+          yMin={0}
+          yMax={Math.max(...progress.map((p) => p.ret_mae ?? 0)) * 1.1 || 1}
+          formatY={(v) => v.toFixed(4)}
+          series={[{ label: 'ret_mae', color: '#fb923c', points: progress.map((p) => p.ret_mae) }]}
+        />
+      )}
+      {progress.some((p) => p.vol_mae != null) && (
+        <Plot
+          title="Volatility head — val MAE (standardized)"
+          yMin={0}
+          yMax={Math.max(...progress.map((p) => p.vol_mae ?? 0)) * 1.1 || 1}
+          formatY={(v) => v.toFixed(3)}
+          series={[{ label: 'vol_mae', color: '#a78bfa', points: progress.map((p) => p.vol_mae) }]}
+        />
+      )}
     </div>
   )
 }

@@ -102,6 +102,19 @@ export const STAGE_FILES = [
     ],
   },
   {
+    label: 'Tests — proving it works',
+    files: [
+      {
+        path: 'src/backend/tests/conftest.py',
+        desc: 'Shared test fixtures: the FastAPI app wired to an in-memory SQLite database by overriding the get_session dependency — the one seam every router goes through. Tables are dropped and recreated per test, so every test starts truly empty. Run the whole backend suite from the repo root with: uv run pytest',
+      },
+      {
+        path: 'src/backend/tests/test_data_router.py',
+        desc: "Tests this stage's endpoints against seeded bars: inventory grouping and counts, bar ordering / limit / date filtering / case-insensitive symbols, and that delete removes exactly the right rows. (/ingest itself is not router-tested: its UPSERT is MySQL-only and the Alpaca call is external.) Run just this file with: uv run pytest src/backend/tests/test_data_router.py",
+      },
+    ],
+  },
+  {
     label: 'Lesson content',
     files: [
       {

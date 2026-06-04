@@ -4,7 +4,7 @@ A living build plan for the staged forecasting pipeline. Update the status marke
 progresses. Companion docs: design outline in [`src/README.md`](../src/README.md), reference
 docs in [`documentation.md`](./documentation.md).
 
-**Last updated:** 2026-06-03
+**Last updated:** 2026-06-04
 
 ## Status Legend
 - ✅ **done** — built and verified
@@ -42,7 +42,7 @@ docs in [`documentation.md`](./documentation.md).
 | **Background training jobs + progress streaming** (WS or polling) | ✅ | threaded worker writes per-epoch progress to the run row; UI polls `GET /runs/{id}` |
 | **Dataset builder** (windowing, time-ordered splits, scaling) | ✅ | `services/datasets.py`; per-segment windowing + train-only scaler (leakage-safe) |
 | **PyTorch installed** | ✅ | `torch==2.2.2` (last Intel-Mac wheel) on Python 3.11; **pinned `numpy<2`** (1.26.4) — torch 2.2.2 can't run against NumPy 2.x |
-| **Indicator module** (the 10 indicators, params, toggles) | 🔲 | `services/features/indicators.py`; reuse srcV1 logic |
+| **Indicator module** (the 10 indicators, params, toggles) | ✅ | `services/features/indicators.py`; framework + 10 functions ported from srcV1 (pure stdlib, registry pattern, `placement` metadata) |
 | **MetricsChart / TrainingProgress / HyperParamForm components** | ✅ | `frontend/src/components/`; reusable across stages |
 
 ---
@@ -94,39 +94,73 @@ split=70/15/15, early-stop patience=5.
 
 ---
 
-## Stage 3 — Multi-Task Model 🔲 PLANNED
+## Stage 3 — Multi-Task Model ✅ DONE
 
 **Goal:** add technical indicators as features; predict direction + return + volatility from
 shared representation.
 
-**To build:**
-- `services/features/indicators.py`: the 10 indicators with editable params; `feature_cache`.
-- Indicators endpoint (`indicators=[{name, params}, ...]`) feeding chart overlays/panes AND
-  the ML feature pipeline.
-- `ml/models/multitask.py`: shared trunk + 3 heads.
-- Frontend: indicator toggle panel (each toggle reveals its param inputs); chart overlays
-  (SMA/EMA/Bollinger/VWAP on price pane) and sub-panes (RSI/MACD/Stochastic/ATR/ADX/OBV).
-- Lesson markdown.
+**Built & verified (end-to-end against the live DB):**
+- `services/features/indicators.py`: the 10 indicators (ported from srcV1: framework + the 10
+  functions, pure stdlib, `placement` metadata) + `routers/features.py`
+  (`GET /indicators/catalog`, `POST /indicators` over **stored** bars, returns bars + series).
+- `services/features/feature_pipeline.py`: bars → aligned feature matrix; **feature_cache wired
+  in** (config-hash `feature_set` key, delete+bulk-insert, verified cache hit on re-run);
+  `estimate_warmup()` for the overlay clamp.
+- `services/datasets.py` `build_multitask_dataset`: warm-up trim, leakage-safe wide-matrix
+  scaling, three labels (direction; standardized log return; standardized log1p realized vol
+  over `vol_window`); `TargetStats` saved in the artifact.
+- `ml/models/multitask.py`: shared LSTM trunk + 3 heads; trainer `_*_mt` path (loss =
+  w_dir·BCE + w_ret·MSE + w_vol·MSE, scheduler/early-stop on total val loss, per-head progress);
+  `POST /api/v1/train/multitask`; `predict_overlay_multitask` (OOS clamp accounts for warm-up;
+  arrows + predicted return/vol).
+- Frontend `pages/Stage3MultiTask.jsx` (full 10-section template): catalog-driven
+  IndicatorPanel (toggle reveals params) + **live chart preview** (PriceChart `overlays` +
+  native v5 `panes`), presets pairing params+indicators, per-head MetricsChart plots, verdict
+  (direction head), runs table, Stage3FlowChart, stageFiles incl. Tests group.
+- Lesson markdown: `content/stage3.{what,why,understand,writeup}.md`.
+- Tests: `test_indicators.py` (19), `test_features_router.py`, `test_multitask_dataset.py`
+  (standalone like test_datasets), train-router multitask cases; vitest for the selection
+  helpers. (Rolling VWAP, not session-anchored — noted in the lesson.)
 
 **The 10 indicators:** SMA(20), EMA(20), Bollinger(20,2σ), VWAP — *overlay*; RSI(14),
 MACD(12/26/9), Stochastic(14,3,3), ATR(14), ADX(14), OBV — *own pane*.
 
-**Defaults:** heads {direction, return, volatility}; per-task loss weights = 1.0.
+**Defaults:** heads {direction, return, volatility}; per-task loss weights = 1.0; vol_window=5.
 
 ---
 
-## Stage 4 — FinBERT News Sentiment 🔲 PLANNED ⚠ decision pending
+## Stage 4 — FinBERT News Sentiment ✅ DONE
 
 **Goal:** add news-headline sentiment as features.
 
-**To build / decide:**
-- ⚠ **News source:** Finnhub / Alpaca news / yfinance (srcV1 has finnhub + yfinance dirs).
-- FinBERT (`ProsusAI/finbert`) inference, **run once** over a small corpus, aggregate per
-  bar/day, cache to `feature_cache`.
-- Add sentiment features to the dataset builder.
-- Lesson markdown (transformer-based sentiment, why cache).
+**Decision made:** news source = **Alpaca News API** (`/v1beta1/news`) — existing keys, same
+auth/pagination pattern as the bars client, history to 2015. (Finnhub would have needed a new
+API key; yfinance has no historical news.)
 
-**Default:** daily sentiment aggregate; small corpus.
+**Built & verified (real FinBERT run against the live DB):**
+- Optional `[dependency-groups] sentiment`: transformers 4.44 + tokenizers 0.19.1 (Intel-mac
+  wheels, torch 2.2.2-compatible); ALL transformers imports lazy — app boots without the group.
+- `services/sentiment/`: `news_client.py` (paginated, headline-only, capped, id-dedupe),
+  `scorer.py` (lazy FinBERT, batches of 16, 2 threads), `aggregate.py` (PURE: daily net+count,
+  **lag-1 bar alignment**, NaN-before/0-after fill, no forward-fill — the leakage rules, with
+  the hardest tests in the stage), `prep_service.py` (resumable background job on a
+  TrainingRun stage="finbert-prep"; daily aggregates → feature_cache `finbert_daily`),
+  `sentiment_features.py` (training-side cache reader).
+- `models.py` `NewsArticle` (composite PK symbol+id, scores nullable until scored).
+- Endpoints: `POST /sentiment/prepare`, `GET /sentiment/headlines`, `GET /sentiment/coverage`;
+  `POST /train/sentiment` = the Stage 3 multitask trainer with stage="sentiment" + two
+  hstacked sentiment columns (datasets.py untouched); overlay rebuilds the same columns.
+- Frontend `pages/Stage4Sentiment.jsx` (template + a "Prepare the Corpus" section): PrepPanel
+  with live FinBERT progress, **HeadlineBrowser** (per-headline pos/neu/neg score bars),
+  CoverageTimeline (SVG daily-net sparkline), TrainForm = Stage 3's + the sentiment toggle
+  with slice-coverage guard; A/B presets incl. the Stage 3 rematch control.
+- Verified: real prep run (300 TSLA headlines scored, resumable after interruption, sane
+  scores), sentiment train n_features = 5+indicators+2, overlay loads with no n_features
+  mismatch, rematch run comparable in the runs table. Tests: news client (mocked urlopen),
+  aggregate (standalone), prep/router (fake scorer — FinBERT never runs in CI), train router.
+
+**Default:** daily sentiment aggregate (net = mean pos − mean neg, log1p count); lag 1 day;
+small corpus (max_articles default 300).
 
 ---
 

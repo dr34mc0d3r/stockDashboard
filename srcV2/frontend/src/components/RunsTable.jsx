@@ -6,6 +6,10 @@
 import { baselineEdge } from '../lib/runStats.js'
 import { STATUS_STYLES } from '../lib/statusStyles.js'
 
+// First line of a failed run's error detail (the human-readable part —
+// the traceback below it is for the View panel).
+const errorLine = (r) => (r.detail || '').split('\n')[0].trim()
+
 function fmtWhen(iso) {
   const d = new Date(iso)
   return d.toLocaleString(undefined, {
@@ -34,14 +38,22 @@ function EdgeCell({ metrics }) {
   )
 }
 
-export default function RunsTable({ runs, currentRunId, busy, onView, onUseParams, onRefresh }) {
+export default function RunsTable({
+  runs,
+  currentRunId,
+  busy,
+  onView,
+  onUseParams,
+  onDelete,
+  onRefresh,
+}) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-400">
-          Every Stage 2 run, newest first. <strong className="text-slate-300">Edge</strong> is test
-          accuracy minus that run's own always-guess-the-majority baseline — the only fair way to
-          compare runs trained on different slices.
+          Every run for this stage, newest first. <strong className="text-slate-300">Edge</strong>{' '}
+          is direction test accuracy minus that run's own always-guess-the-majority baseline — the
+          only fair way to compare runs trained on different slices.
         </p>
         <button
           type="button"
@@ -109,9 +121,19 @@ export default function RunsTable({ runs, currentRunId, busy, onView, onUseParam
                     <td className="px-1.5 py-2">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_STYLES[r.status] ?? ''}`}
+                        title={r.status === 'error' ? errorLine(r) : undefined}
                       >
                         {r.status}
                       </span>
+                      {/* Why it failed, in-place — hover for the full line. */}
+                      {r.status === 'error' && errorLine(r) && (
+                        <span
+                          className="mt-1 block max-w-44 truncate text-[10px] leading-tight text-red-300/80"
+                          title={errorLine(r)}
+                        >
+                          {errorLine(r)}
+                        </span>
+                      )}
                     </td>
                     <td className="px-1.5 py-2">
                       <div className="flex flex-col items-stretch gap-1">
@@ -130,6 +152,18 @@ export default function RunsTable({ runs, currentRunId, busy, onView, onUseParam
                         >
                           Use params
                         </button>
+                        {onDelete && (
+                          <button
+                            type="button"
+                            onClick={() => onDelete(r)}
+                            // Active runs can't be deleted (the worker is still
+                            // writing to the row) — the backend refuses too.
+                            disabled={r.status === 'queued' || r.status === 'running'}
+                            className="rounded-md bg-red-500/15 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/25 disabled:opacity-40"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

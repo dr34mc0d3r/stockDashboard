@@ -1,15 +1,17 @@
 """TrainingRun bookkeeping for the train endpoints.
 
 The router decides *what HTTP to speak* (status codes, error details); this
-module owns the DB work: checking that data exists and creating the run row
-the background trainer will update.
+module owns the DB work: checking that data exists, creating the run row the
+background trainer will update, and deleting a run with its artifact.
 """
+
+from pathlib import Path
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from models import OhlcvBar, TrainingRun
-from schemas import TrainLstmRequest
+from schemas import TrainLstmRequest, TrainMultiTaskRequest
 
 
 def count_bars(session: Session, symbol: str, timeframe: str) -> int:
@@ -21,10 +23,12 @@ def count_bars(session: Session, symbol: str, timeframe: str) -> int:
     ).scalar_one()
 
 
-def create_run(session: Session, req: TrainLstmRequest) -> TrainingRun:
+def create_run(
+    session: Session, req: TrainLstmRequest | TrainMultiTaskRequest, stage: str
+) -> TrainingRun:
     """Insert a queued TrainingRun row for this request and return it."""
     run = TrainingRun(
-        stage="lstm",
+        stage=stage,
         symbol=req.symbol,
         timeframe=req.timeframe,
         start=req.start,
@@ -37,3 +41,15 @@ def create_run(session: Session, req: TrainLstmRequest) -> TrainingRun:
     session.commit()
     session.refresh(run)
     return run
+
+
+def delete_run(session: Session, run: TrainingRun) -> None:
+    """Delete a run row and its saved model artifact (if any) from disk.
+
+    Callers must not pass an active (queued/running) run — its worker thread
+    would crash trying to update a vanished row; the router enforces that.
+    """
+    if run.artifact_path:
+        Path(run.artifact_path).unlink(missing_ok=True)
+    session.delete(run)
+    session.commit()

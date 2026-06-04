@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from config import CORS_ORIGINS
 from db_startup import migrate_and_recover
-from routers import data, ingest, train
+from routers import data, features, ingest, sentiment, train
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -47,6 +47,8 @@ app.add_middleware(
 
 app.include_router(ingest.router)
 app.include_router(data.router)
+app.include_router(features.router)
+app.include_router(sentiment.router)
 app.include_router(train.router)
 
 

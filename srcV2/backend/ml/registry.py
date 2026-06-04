@@ -29,8 +29,13 @@ def save(
     scaler: dict,
     n_features: int,
     metrics: dict | None = None,
+    extras: dict | None = None,
 ) -> str:
-    """Persist a trained model bundle; returns the artifact path as a string."""
+    """Persist a trained model bundle; returns the artifact path as a string.
+
+    ``extras`` holds stage-specific reproduction data (e.g. Stage 3's
+    regression-target scaling stats and feature-column names).
+    """
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     path = artifact_path(run_id, stage)
     torch.save(
@@ -41,6 +46,7 @@ def save(
             "scaler": scaler,
             "n_features": n_features,
             "metrics": metrics,
+            "extras": extras or {},
         },
         path,
     )
